@@ -16,6 +16,7 @@ export type GenerateRequest = {
   tone: Tone;
   includeScores: boolean;
   teacherName?: string;
+  teacherObservation?: string;
   student?: StudentReport;
   classSummary?: ClassSummary;
   classContext?: ClassContext;
@@ -74,16 +75,20 @@ export function buildLocalDraft(input: GenerateRequest): string {
   const teacher = input.teacherName ? `\n\n${input.teacherName} 드림` : "";
   const focus = student.focusSubject;
   const strength = student.strongestSubject;
+  const observation = input.teacherObservation?.trim();
   const opening = input.includeScores && student.averageScore !== null
     ? `이번 평가의 전반적인 결과를 살펴보면 평균은 ${student.averageScore}점이며,`
     : "이번 평가 결과를 살펴보면";
+  const observationSentence = observation
+    ? `담임으로서 관찰한 바로는 ${observation}`
+    : `${student.name} 학생은 수업과 과제 과정에서 자신의 속도로 해내려는 모습을 보여 주었습니다.`;
 
   return [
     `${student.name} 학부모님께.`,
-    `${opening} ${student.name} 학생은 ${strength?.subject ?? "몇몇 과목"}에서 스스로 해낸 부분을 바탕으로 자신감을 이어갈 수 있겠습니다. 앞으로는 ${focus?.subject ?? "보완이 필요한 과목"} 학습을 조금 더 계획적으로 다듬어 가면 좋겠습니다.`,
-    studyAdvice(focus),
-    "가정에서는 결과를 먼저 평가하기보다 아이가 어떤 방식으로 공부했는지, 어느 부분에서 막혔는지 차분히 이야기 나누어 주세요. 하루 공부 시간을 크게 늘리기보다 오답을 다시 설명해 보기, 다음 시험 전까지 작은 목표를 정하기처럼 실천 가능한 약속을 함께 세워 주시면 도움이 되겠습니다.",
-    "학교에서도 수업 참여와 학습 습관을 꾸준히 살피며 필요한 부분을 함께 지도하겠습니다.",
+    `${opening} ${observationSentence} ${strength?.subject ?? "몇몇 과목"}에서 보여 준 태도를 바탕으로 자신감을 이어가면 좋겠습니다.`,
+    `앞으로는 ${focus?.subject ?? "보완이 필요한 과목"} 학습에서 한 가지 습관을 더 연습해 보면 좋겠습니다. ${studyAdvice(focus)}`,
+    "가정에서는 결과를 먼저 평가하기보다 아이가 어떤 방식으로 공부했는지 차분히 들어주시고, 매일 10분 복습하기나 읽은 내용을 말로 설명해 보기처럼 작게 실천할 수 있는 약속을 함께 확인해 주시면 도움이 되겠습니다.",
+    "학교에서도 수업 참여와 학습 습관을 꾸준히 살피며 가정과 같은 마음으로 지도하겠습니다.",
   ].join("\n\n") + teacher;
 }
 
@@ -116,14 +121,21 @@ export function buildPrompt(input: GenerateRequest): string {
   return [
     sharedRules.join("\n"),
     "개별 메시지는 해당 학생의 다음 공부 방향을 제안하는 데 집중한다.",
+    "핵심은 가정에 '담임이 이 아이를 잘 보고 있다'는 느낌이 전달되게 하는 것이다.",
+    "담임 관찰내용이 있으면 가장 우선해 자연스럽게 반영한다. 단, 성격을 단정하지 말고 관찰된 행동과 태도로 표현한다.",
+    "보완점은 한 가지 정도만 언급하고, '부족하다'가 아니라 '앞으로는 ~을 조금 더 연습하면 좋겠습니다'처럼 성장 가능성으로 표현한다.",
     "등급, 등급대, 1-5등급, 석차, 백분위, 상위 몇 %, 평균 등급이라는 표현을 직접 쓰지 않는다.",
     input.includeScores
       ? "점수는 꼭 필요할 때만 한 번 정도 부드럽게 언급할 수 있으나, 핵심은 공부 방법 조언이어야 한다."
       : "구체적인 점수 숫자도 쓰지 않는다.",
-    "강점 과목은 자신감을 이어갈 근거로, 보완 과목은 구체적인 학습 전략으로 풀어 쓴다.",
-    "가정에서는 질책보다 대화, 오답 설명, 짧은 목표 설정, 학습 루틴 점검을 도와 달라는 내용을 포함한다.",
+    "강점은 자신감을 이어갈 근거로, 보완점은 구체적인 학습 전략으로 풀어 쓴다.",
+    "가정에서 도울 방법은 매일 10분 복습하기, 읽은 내용을 말로 설명해 보기, 과제 계획 함께 확인하기처럼 실천 가능한 제안으로 쓴다.",
+    "친구와 비교하는 말, 성격을 단정하는 말, '노력이 부족함' 같은 막연한 지적, 성적만 강조하는 문장을 피한다.",
+    "마무리는 학교와 가정이 함께 살피겠다는 협력 메시지로 쓴다.",
     "학생 이름을 자연스럽게 1회 이상 포함한다.",
-    "450자에서 750자 사이의 본문으로 작성한다.",
+    "280자에서 450자 사이의 길지 않은 본문으로 작성한다.",
+    "담임 관찰내용:",
+    input.teacherObservation?.trim() || "(입력 없음)",
     "학생 요약 JSON:",
     JSON.stringify(input.student, null, 2),
   ].join("\n\n");

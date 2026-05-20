@@ -1,6 +1,6 @@
 "use client";
 
-import { ChangeEvent, useMemo, useState } from "react";
+import { ChangeEvent, DragEvent, useMemo, useState } from "react";
 import {
   AlertCircle,
   BarChart3,
@@ -92,23 +92,26 @@ export default function Home() {
   const [tone, setTone] = useState<Tone>("warm");
   const [includeScores, setIncludeScores] = useState(false);
   const [teacherName, setTeacherName] = useState("");
+  const [classGrade, setClassGrade] = useState("");
+  const [classNumberInput, setClassNumberInput] = useState("");
+  const [observations, setObservations] = useState<Record<string, string>>({});
   const [message, setMessage] = useState("");
   const [notice, setNotice] = useState("");
   const [messageSource, setMessageSource] = useState<MessageSource>("idle");
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
 
   const summary = useMemo<ClassSummary | null>(() => (reports.length ? summarizeClass(reports) : null), [reports]);
   const selectedStudent = reports.find((report) => report.id === selectedId) ?? reports[0] ?? null;
+  const selectedObservation = selectedStudent ? observations[selectedStudent.id] ?? "" : "";
 
-  async function handleFile(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0];
-    if (!file) return;
-
+  async function parseUploadedFile(file: File) {
     setIsParsing(true);
     setParseError("");
     setMessage("");
     setNotice("");
     setMessageSource("idle");
+    setObservations({});
 
     try {
       const ExcelJS = await import("exceljs");
@@ -135,6 +138,8 @@ export default function Home() {
       setFileName(file.name);
       setReports(parsed);
       setSelectedId(parsed[0]?.id ?? null);
+      setClassGrade(parsed[0]?.grade ?? "");
+      setClassNumberInput(parsed[0]?.classNumber ?? "");
     } catch (error) {
       setReports([]);
       setSelectedId(null);
@@ -142,8 +147,39 @@ export default function Home() {
       setParseError(error instanceof Error ? error.message : "엑셀 파일을 읽지 못했습니다.");
     } finally {
       setIsParsing(false);
+      setIsDragging(false);
+    }
+  }
+
+  async function handleFile(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    try {
+      await parseUploadedFile(file);
+    } finally {
       event.target.value = "";
     }
+  }
+
+  function handleDragOver(event: DragEvent<HTMLElement>) {
+    event.preventDefault();
+    setIsDragging(true);
+  }
+
+  function handleDragLeave(event: DragEvent<HTMLElement>) {
+    event.preventDefault();
+    setIsDragging(false);
+  }
+
+  async function handleDrop(event: DragEvent<HTMLElement>) {
+    event.preventDefault();
+    const file = event.dataTransfer.files?.[0];
+    if (!file) {
+      setIsDragging(false);
+      return;
+    }
+    await parseUploadedFile(file);
   }
 
   function downloadCsv() {
@@ -173,16 +209,17 @@ export default function Home() {
           tone,
           includeScores,
           teacherName,
+          teacherObservation: mode === "individual" ? selectedObservation : undefined,
           student: mode === "individual" ? selectedStudent : undefined,
           classSummary: mode === "class" ? summary : undefined,
           classContext:
-            mode === "class" && reports[0]
+            mode === "class"
               ? {
-                  year: reports[0].year,
-                  semester: reports[0].semester,
-                  grade: reports[0].grade,
-                  classNumber: reports[0].classNumber,
-                  examName: reports[0].examName,
+                  year: reports[0]?.year,
+                  semester: reports[0]?.semester,
+                  grade: classGrade || reports[0]?.grade,
+                  classNumber: classNumberInput || reports[0]?.classNumber,
+                  examName: reports[0]?.examName,
                 }
               : undefined,
         }),
@@ -225,12 +262,20 @@ export default function Home() {
         </div>
       </header>
 
-      <section className="upload-strip">
+      <section
+        className={`upload-strip ${isDragging ? "dragging" : ""}`}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+      >
         <div className="file-state">
           <FileSpreadsheet size={22} />
           <div>
             <strong>{fileName || "나이스 성적통지표 xlsx"}</strong>
             <span>{isParsing ? "분석 중" : reports.length ? `${reports.length}명 분석 완료` : "대기 중"}</span>
+            <span className="download-guide">
+              이곳에 파일을 끌어 놓거나 파일 선택을 누르세요. 나이스 &gt; 학급담임 &gt; 성적 &gt; 성적처리 &gt; 성적통지표 &gt; 가정에서 학교로 &gt; 가정통신문 제외 후 미리보기 &gt; XLS DATA 다운로드
+            </span>
           </div>
         </div>
         {isParsing && <Loader2 className="spin" size={20} />}
@@ -408,6 +453,32 @@ export default function Home() {
                 <span>담임명</span>
                 <input value={teacherName} onChange={(event) => setTeacherName(event.target.value)} placeholder="선택" />
               </label>
+
+              <div className="field-row">
+                <label className="field">
+                  <span>학년</span>
+                  <input value={classGrade} onChange={(event) => setClassGrade(event.target.value)} placeholder="예: 2" />
+                </label>
+                <label className="field">
+                  <span>반</span>
+                  <input value={classNumberInput} onChange={(event) => setClassNumberInput(event.target.value)} placeholder="예: 10" />
+                </label>
+              </div>
+
+              {mode === "individual" && (
+                <label className="field">
+                  <span>담임 관찰내용</span>
+                  <textarea
+                    className="observation-textarea"
+                    value={selectedObservation}
+                    onChange={(event) => {
+                      if (!selectedStudent) return;
+                      setObservations((current) => ({ ...current, [selectedStudent.id]: event.target.value }));
+                    }}
+                    placeholder="예: 수업 중 질문에 성실히 답하고, 과제 수행을 끝까지 해내려는 모습이 보임"
+                  />
+                </label>
+              )}
 
               <label className="check-row">
                 <input type="checkbox" checked={includeScores} onChange={(event) => setIncludeScores(event.target.checked)} />

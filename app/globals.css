@@ -134,6 +134,11 @@ h2 {
   margin-bottom: 16px;
 }
 
+.upload-strip.dragging {
+  border-color: var(--teal);
+  background: var(--teal-soft);
+}
+
 .file-state {
   display: flex;
   align-items: center;
@@ -153,6 +158,11 @@ h2 {
   margin-top: 3px;
   color: var(--muted);
   font-size: 13px;
+}
+
+.download-guide {
+  max-width: 920px;
+  line-height: 1.45;
 }
 
 .metrics-grid {
@@ -390,6 +400,12 @@ h2 {
   gap: 6px;
 }
 
+.field-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
 .field input,
 .field select,
 textarea {
@@ -413,6 +429,10 @@ textarea {
   min-height: 220px;
   resize: vertical;
   line-height: 1.6;
+}
+
+.observation-textarea {
+  min-height: 86px;
 }
 
 .notice {
@@ -535,7 +555,8 @@ textarea {
   }
 
   .metrics-grid,
-  .student-summary {
+  .student-summary,
+  .field-row {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
