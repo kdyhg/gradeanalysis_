@@ -1,5 +1,5 @@
-import type { ClassSummary, StudentReport } from "@/lib/grade-parser";
-import { formatSigned } from "@/lib/grade-parser";
+import type { ClassSummary, StudentReport, SubjectScore } from "@/lib/grade-parser";
+import { fiveGradeLabel, formatPercentile, formatSigned } from "@/lib/grade-parser";
 
 export type MessageMode = "individual" | "class";
 export type Tone = "warm" | "formal" | "brief";
@@ -19,24 +19,28 @@ function toneLabel(tone: Tone): string {
   return "따뜻하고 격려하는";
 }
 
+function subjectRankText(subject: SubjectScore | null): string {
+  if (!subject) return "확인된 과목 없음";
+  const rank = subject.rank !== null && subject.participants ? `${subject.rankLabel ?? subject.rank}/${subject.participants}명` : "석차 없음";
+  const grade = subject.fiveGrade ? fiveGradeLabel(subject.fiveGrade) : "등급 산출 불가";
+  const percentile = formatPercentile(subject.percentile);
+  return `${subject.subject}(${grade}, ${percentile}, ${rank})`;
+}
+
 function subjectLine(report: StudentReport): string {
-  const strong = report.strongestSubject;
-  const focus = report.focusSubject;
-  const strongText = strong ? `${strong.subject}(${formatSigned(strong.deltaFromAverage)})` : "확인된 강점 과목 없음";
-  const focusText = focus ? `${focus.subject}(${formatSigned(focus.deltaFromAverage)})` : "확인된 보완 과목 없음";
-  return `강점: ${strongText}, 보완: ${focusText}`;
+  return `강점: ${subjectRankText(report.strongestSubject)}, 보완: ${subjectRankText(report.focusSubject)}`;
 }
 
 export function buildLocalDraft(input: GenerateRequest): string {
   if (input.mode === "class") {
     const summary = input.classSummary;
     if (!summary) return "학급 분석 자료를 먼저 불러와 주세요.";
-    const focus = summary.focusSubjects.map((subject) => subject.subject).join(", ") || "보완 과목 없음";
-    const top = summary.topSubjects.map((subject) => subject.subject).join(", ") || "강점 과목 없음";
+    const focus = summary.focusSubjects.map((subject) => `${subject.subject}(${fiveGradeLabel(subject.averageFiveGrade)})`).join(", ") || "보완 과목 없음";
+    const top = summary.topSubjects.map((subject) => `${subject.subject}(${fiveGradeLabel(subject.averageFiveGrade)})`).join(", ") || "강점 과목 없음";
     return [
       "학부모님께.",
-      `${summary.studentCount}명 성적을 살펴본 결과, 학급 평균은 ${summary.classAverage ?? "-"}점이며 과목 평균 대비 차이는 ${formatSigned(summary.averageGap)}점입니다.`,
-      `상대적으로 안정적인 흐름을 보인 과목은 ${top}이고, 다음 기간에 함께 점검하면 좋을 과목은 ${focus}입니다.`,
+      `${summary.studentCount}명 성적을 살펴본 결과, 학급 평균은 ${summary.classAverage ?? "-"}점, 5등급제 기준 평균 등급은 ${fiveGradeLabel(summary.averageFiveGrade)}이며 과목 평균 대비 차이는 ${formatSigned(summary.averageGap)}점입니다.`,
+      `석차를 함께 고려했을 때 상대적으로 안정적인 흐름을 보인 과목은 ${top}이고, 다음 기간에 함께 점검하면 좋을 과목은 ${focus}입니다.`,
       "가정에서는 결과 자체보다 학습 습관, 오답 정리, 질문하는 태도가 이어질 수 있도록 격려해 주시면 학교에서도 학생별 상황에 맞춰 꾸준히 살피겠습니다.",
     ].join("\n\n");
   }
@@ -45,11 +49,11 @@ export function buildLocalDraft(input: GenerateRequest): string {
   if (!student) return "학생을 먼저 선택해 주세요.";
   const teacher = input.teacherName ? `\n\n${input.teacherName} 드림` : "";
   const scoreText = input.includeScores
-    ? ` 평균은 ${student.averageScore ?? "-"}점, 과목 평균 대비 ${formatSigned(student.averageDelta)}점입니다.`
-    : "";
+    ? ` 평균은 ${student.averageScore ?? "-"}점, 과목 평균 대비 ${formatSigned(student.averageDelta)}점, 5등급제 기준 평균은 ${fiveGradeLabel(student.averageFiveGrade)}입니다.`
+    : ` 5등급제 기준 평균은 ${fiveGradeLabel(student.averageFiveGrade)}입니다.`;
   return [
     `${student.name} 학부모님께.`,
-    `${student.name} 학생의 이번 평가를 살펴보았습니다.${scoreText} ${subjectLine(student)} 흐름이 확인됩니다.`,
+    `${student.name} 학생의 이번 평가를 석차와 과목 평균을 함께 보며 살펴보았습니다.${scoreText} ${subjectLine(student)} 흐름이 확인됩니다.`,
     "잘 해낸 부분은 자신감으로 이어가고, 보완이 필요한 과목은 오답 원인과 공부 시간을 함께 점검하면 다음 평가에서 더 안정적인 변화를 만들 수 있겠습니다.",
     "학교에서도 수업 참여와 학습 습관을 지속적으로 살피며 필요한 도움을 이어가겠습니다.",
   ].join("\n\n") + teacher;
@@ -59,11 +63,13 @@ export function buildPrompt(input: GenerateRequest): string {
   const sharedRules = [
     "한국 고등학교 담임교사가 학부모에게 보내는 문안으로 작성한다.",
     "학생을 낙인찍거나 비교하지 않는다.",
-    "순위와 등급은 요청 데이터에 있어도 과도하게 강조하지 않는다.",
+    "순위와 등급은 분석에 반영하되 과도하게 강조하지 않는다.",
+    "2022 개정 교육과정 5등급제 기준은 1등급 상위 10%, 2등급 누적 34%, 3등급 누적 66%, 4등급 누적 90%, 5등급 누적 100%로 본다.",
+    "동석차가 있는 경우 제공된 midRank와 percentile을 기준으로 해석한다.",
     "학업 결과, 노력 방향, 가정에서 도울 수 있는 행동을 균형 있게 담는다.",
     "과장된 약속이나 진단적 표현을 피한다.",
     `문체는 ${toneLabel(input.tone)} 톤으로 한다.`,
-    input.includeScores ? "필요한 경우 점수와 평균 대비 차이를 자연스럽게 포함한다." : "구체적인 점수 숫자는 쓰지 않는다.",
+    input.includeScores ? "필요한 경우 점수, 석차, 5등급제 추정 등급을 자연스럽게 포함한다." : "구체적인 점수 숫자는 쓰지 말고 석차/등급 흐름은 부드럽게 반영한다.",
   ];
 
   if (input.mode === "class") {

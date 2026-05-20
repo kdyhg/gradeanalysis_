@@ -157,7 +157,7 @@ h2 {
 
 .metrics-grid {
   display: grid;
-  grid-template-columns: repeat(5, minmax(120px, 1fr));
+  grid-template-columns: repeat(6, minmax(120px, 1fr));
   gap: 10px;
   margin-bottom: 16px;
 }
@@ -293,7 +293,8 @@ h2 {
 
 .badge.growth,
 .badge.strength,
-.soft-pill.openai {
+.soft-pill.openai,
+.soft-pill.gemini {
   background: var(--teal-soft);
   color: #0b5c51;
 }
@@ -314,7 +315,7 @@ h2 {
 
 .student-summary {
   display: grid;
-  grid-template-columns: repeat(4, minmax(88px, 1fr));
+  grid-template-columns: repeat(5, minmax(88px, 1fr));
   gap: 10px;
   margin-bottom: 14px;
 }
@@ -337,7 +338,7 @@ h2 {
 .subject-table {
   width: 100%;
   border-collapse: collapse;
-  min-width: 520px;
+  min-width: 720px;
 }
 
 .subject-table th,
@@ -439,7 +440,7 @@ textarea {
 
 .subject-bar-row {
   display: grid;
-  grid-template-columns: minmax(110px, 160px) minmax(140px, 1fr) 48px 50px;
+  grid-template-columns: minmax(110px, 160px) minmax(140px, 1fr) 48px 62px 50px;
   align-items: center;
   gap: 10px;
   font-size: 14px;

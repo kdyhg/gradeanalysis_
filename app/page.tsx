@@ -15,6 +15,8 @@ import {
   UsersRound,
 } from "lucide-react";
 import {
+  fiveGradeLabel,
+  formatPercentile,
   formatSigned,
   parseNeisRows,
   summarizeClass,
@@ -24,7 +26,7 @@ import {
 } from "@/lib/grade-parser";
 import type { MessageMode, Tone } from "@/lib/local-message";
 
-type MessageSource = "idle" | "openai" | "local";
+type MessageSource = "idle" | "openai" | "gemini" | "local";
 
 const statusLabels: Record<StudentReport["overallStatus"], string> = {
   growth: "강점",
@@ -43,6 +45,11 @@ function scoreText(value: number | null): string {
   return value === null ? "-" : value.toFixed(1);
 }
 
+function rankText(subject: SubjectScore): string {
+  if (subject.rank === null || !subject.participants) return "-";
+  return `${subject.rankLabel ?? subject.rank}/${subject.participants}`;
+}
+
 function subjectStatusLabel(status: SubjectScore["status"]): string {
   if (status === "strength") return "강점";
   if (status === "watch") return "점검";
@@ -51,7 +58,7 @@ function subjectStatusLabel(status: SubjectScore["status"]): string {
 }
 
 function toCsv(reports: StudentReport[]): string {
-  const header = ["반", "번호", "이름", "과목", "점수", "과목평균", "차이", "석차", "수강자수", "상태"];
+  const header = ["반", "번호", "이름", "과목", "점수", "과목평균", "차이", "석차", "중간석차", "석차백분위", "5등급", "수강자수", "상태"];
   const rows = reports.flatMap((report) =>
     report.subjects.map((subject) => [
       report.classNumber ?? "",
@@ -62,6 +69,9 @@ function toCsv(reports: StudentReport[]): string {
       subject.subjectAverage ?? "",
       subject.deltaFromAverage ?? "",
       subject.rankLabel ?? "",
+      subject.midRank ?? "",
+      subject.percentile ?? "",
+      subject.fiveGrade ?? "",
       subject.participants ?? "",
       subjectStatusLabel(subject.status),
     ]),
@@ -241,6 +251,10 @@ export default function Home() {
               <span>평균 대비</span>
               <strong>{formatSigned(summary.averageGap)}</strong>
             </div>
+            <div className="metric">
+              <span>5등급제 평균</span>
+              <strong>{fiveGradeLabel(summary.averageFiveGrade)}</strong>
+            </div>
             <div className="metric warn">
               <span>점검 학생</span>
               <strong>{summary.supportCount}</strong>
@@ -292,6 +306,10 @@ export default function Home() {
                       <strong>{formatSigned(selectedStudent.averageDelta)}</strong>
                     </div>
                     <div>
+                      <span>5등급제 평균</span>
+                      <strong>{fiveGradeLabel(selectedStudent.averageFiveGrade)}</strong>
+                    </div>
+                    <div>
                       <span>강점</span>
                       <strong>{selectedStudent.strengthCount}</strong>
                     </div>
@@ -309,6 +327,8 @@ export default function Home() {
                           <th>점수</th>
                           <th>평균</th>
                           <th>차이</th>
+                          <th>석차</th>
+                          <th>5등급</th>
                           <th>상태</th>
                         </tr>
                       </thead>
@@ -320,6 +340,8 @@ export default function Home() {
                               <td>{scoreText(subject.value)}</td>
                               <td>{scoreText(subject.subjectAverage)}</td>
                               <td>{formatSigned(subject.deltaFromAverage)}</td>
+                              <td title={formatPercentile(subject.percentile)}>{rankText(subject)}</td>
+                              <td title={subject.fiveGradeLabel ?? ""}>{fiveGradeLabel(subject.fiveGrade)}</td>
                               <td>
                                 <span className={`badge ${subject.status}`}>{subjectStatusLabel(subject.status)}</span>
                               </td>
@@ -327,7 +349,7 @@ export default function Home() {
                           ))
                         ) : (
                           <tr>
-                            <td colSpan={5} className="empty-cell">
+                            <td colSpan={7} className="empty-cell">
                               성적 데이터 없음
                             </td>
                           </tr>
@@ -346,7 +368,9 @@ export default function Home() {
                   <h2>문안</h2>
                 </div>
                 {messageSource !== "idle" && (
-                  <span className={`soft-pill ${messageSource}`}>{messageSource === "openai" ? "AI" : "로컬"}</span>
+                  <span className={`soft-pill ${messageSource}`}>
+                    {messageSource === "gemini" ? "Gemini" : messageSource === "openai" ? "OpenAI" : "로컬"}
+                  </span>
                 )}
               </div>
 
@@ -417,6 +441,7 @@ export default function Home() {
                       <div className={subject.gap !== null && subject.gap < 0 ? "bar negative" : "bar"} style={{ width: `${width}%` }} />
                     </div>
                     <strong>{scoreText(subject.averageScore)}</strong>
+                    <strong>{fiveGradeLabel(subject.averageFiveGrade)}</strong>
                     <em>{formatSigned(subject.gap)}</em>
                   </div>
                 );
