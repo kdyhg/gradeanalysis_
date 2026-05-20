@@ -9,7 +9,9 @@ const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash-lite";
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.GOOGLE_API_KEY;
 
 const SYSTEM_INSTRUCTIONS =
-  "너는 한국 학교 담임교사의 학부모 소통 문안을 돕는 조심스럽고 전문적인 보조자다. 개인정보를 새로 추정하지 말고, 제공된 데이터 범위 안에서만 작성한다. 성적 분석은 문안의 방향을 잡는 데만 사용하고, 학부모에게는 따뜻하고 실천 가능한 지도 방향으로 풀어 쓴다. 출력은 한국어 본문만 제공한다.";
+  "너는 한국 학교 담임교사의 학부모 소통 문안을 돕는 조심스럽고 전문적인 보조자다. 개인정보를 새로 추정하지 말고, 제공된 데이터 범위 안에서만 작성한다. 성적 분석은 문안의 방향을 잡는 내부 참고로만 사용하고, 학부모에게는 따뜻하고 실천 가능한 지도 방향으로 풀어 쓴다. AI가 쓴 글처럼 과하게 매끈하거나 거창한 표현을 피하고, 담임이 직접 적은 짧고 담백한 문장으로 쓴다. 등급, 등급대, 석차, 백분위, 상위, 순위, 평균 등급 같은 표현은 절대 출력하지 않는다. 출력은 한국어 본문만 제공한다.";
+
+const FORBIDDEN_GRADE_LANGUAGE = /등급|등급대|석차|백분위|상위\s*\d*|순위|평균\s*등급|rank|percentile/i;
 
 type GeminiResponse = {
   candidates?: Array<{
@@ -49,6 +51,21 @@ function friendlyAiNotice(message: string): string {
     return "Gemini 모델 사용량이 많아 로컬 초안을 생성했습니다. 잠시 뒤 다시 시도해 주세요.";
   }
   return message;
+}
+
+function finalizeAiMessage(generated: string, fallback: string) {
+  const message = generated.trim();
+  if (!message) {
+    return { message: fallback, usedFallback: true };
+  }
+  if (FORBIDDEN_GRADE_LANGUAGE.test(message)) {
+    return {
+      message: fallback,
+      usedFallback: true,
+      notice: "AI 초안에 등급이나 석차 표현이 포함되어 담임용 로컬 초안으로 바꿨습니다.",
+    };
+  }
+  return { message, usedFallback: false };
 }
 
 async function generateWithGemini(prompt: string): Promise<string> {
@@ -109,18 +126,22 @@ export async function POST(request: NextRequest) {
 
   try {
     if (GEMINI_API_KEY) {
+      const generated = finalizeAiMessage(await generateWithGemini(prompt), fallback);
       return NextResponse.json({
-        message: (await generateWithGemini(prompt)) || fallback,
-        source: "gemini",
+        message: generated.message,
+        source: generated.usedFallback ? "local" : "gemini",
         model: GEMINI_MODEL,
+        notice: generated.notice,
       });
     }
 
     if (process.env.OPENAI_API_KEY) {
+      const generated = finalizeAiMessage(await generateWithOpenAI(prompt), fallback);
       return NextResponse.json({
-        message: (await generateWithOpenAI(prompt)) || fallback,
-        source: "openai",
+        message: generated.message,
+        source: generated.usedFallback ? "local" : "openai",
         model: OPENAI_MODEL,
+        notice: generated.notice,
       });
     }
 

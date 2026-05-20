@@ -6,6 +6,7 @@ import {
   BarChart3,
   CheckCircle2,
   Clipboard,
+  ClipboardList,
   Download,
   FileSpreadsheet,
   Loader2,
@@ -24,7 +25,7 @@ import {
   type StudentReport,
   type SubjectScore,
 } from "@/lib/grade-parser";
-import type { MessageMode, Tone } from "@/lib/local-message";
+import { buildCounselingMemo, type MessageMode, type Tone } from "@/lib/local-message";
 
 type MessageSource = "idle" | "openai" | "gemini" | "local";
 
@@ -96,6 +97,7 @@ export default function Home() {
   const [classNumberInput, setClassNumberInput] = useState("");
   const [observations, setObservations] = useState<Record<string, string>>({});
   const [message, setMessage] = useState("");
+  const [counselingMemo, setCounselingMemo] = useState("");
   const [notice, setNotice] = useState("");
   const [messageSource, setMessageSource] = useState<MessageSource>("idle");
   const [isGenerating, setIsGenerating] = useState(false);
@@ -112,6 +114,7 @@ export default function Home() {
     setNotice("");
     setMessageSource("idle");
     setObservations({});
+    setCounselingMemo("");
 
     try {
       const ExcelJS = await import("exceljs");
@@ -242,6 +245,17 @@ export default function Home() {
     setNotice("문안을 클립보드에 복사했습니다.");
   }
 
+  function generateCounselingMemo() {
+    setCounselingMemo(buildCounselingMemo(selectedStudent, selectedObservation));
+    setNotice("상담 참고 메모를 만들었습니다.");
+  }
+
+  async function copyCounselingMemo() {
+    if (!counselingMemo) return;
+    await navigator.clipboard.writeText(counselingMemo);
+    setNotice("상담 참고 메모를 클립보드에 복사했습니다.");
+  }
+
   return (
     <main className="workspace">
       <header className="topbar">
@@ -328,7 +342,10 @@ export default function Home() {
                     className={`student-row ${selectedStudent?.id === report.id ? "selected" : ""}`}
                     key={report.id}
                     type="button"
-                    onClick={() => setSelectedId(report.id)}
+                    onClick={() => {
+                      setSelectedId(report.id);
+                      setCounselingMemo("");
+                    }}
                   >
                     <span className="number">{report.studentNumber ?? "-"}</span>
                     <span className="student-name">{report.name}</span>
@@ -504,6 +521,33 @@ export default function Home() {
                   </p>
                 )}
               </div>
+
+              {mode === "individual" && (
+                <div className="counseling-box">
+                  <div className="panel-title mini split">
+                    <div>
+                      <ClipboardList size={18} />
+                      <h3>상담 참고</h3>
+                    </div>
+                    <button className="icon-button" type="button" onClick={generateCounselingMemo} disabled={!selectedStudent} title="상담 메모 만들기">
+                      <ClipboardList size={18} />
+                      <span>메모 만들기</span>
+                    </button>
+                  </div>
+                  <textarea
+                    className="counseling-textarea"
+                    value={counselingMemo}
+                    onChange={(event) => setCounselingMemo(event.target.value)}
+                    placeholder="학생 상담 때 참고할 질문, 격려할 부분, 함께 정할 약속"
+                  />
+                  <div className="message-actions">
+                    <button className="icon-button" type="button" onClick={copyCounselingMemo} disabled={!counselingMemo} title="상담 메모 복사">
+                      <Clipboard size={18} />
+                      <span>메모 복사</span>
+                    </button>
+                  </div>
+                </div>
+              )}
             </section>
           </section>
 
