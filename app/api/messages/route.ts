@@ -9,7 +9,7 @@ const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash-lite";
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.GOOGLE_API_KEY;
 
 const SYSTEM_INSTRUCTIONS =
-  "너는 한국 학교 담임교사의 학부모 소통 문안을 돕는 조심스럽고 전문적인 보조자다. 개인정보를 새로 추정하지 말고, 제공된 데이터 범위 안에서만 작성한다. 석차와 2022 개정 교육과정 5등급제 분석을 반영하되 낙인찍는 표현을 피한다. 출력은 한국어 본문만 제공한다.";
+  "너는 한국 학교 담임교사의 학부모 소통 문안을 돕는 조심스럽고 전문적인 보조자다. 개인정보를 새로 추정하지 말고, 제공된 데이터 범위 안에서만 작성한다. 성적 분석은 문안의 방향을 잡는 데만 사용하고, 학부모에게는 따뜻하고 실천 가능한 지도 방향으로 풀어 쓴다. 출력은 한국어 본문만 제공한다.";
 
 type GeminiResponse = {
   candidates?: Array<{
@@ -41,6 +41,9 @@ function friendlyAiNotice(message: string): string {
   const lower = message.toLowerCase();
   if (lower.includes("quota") || lower.includes("rate-limit") || lower.includes("rate limit")) {
     return "Gemini API 할당량 또는 사용 한도 문제로 로컬 초안을 생성했습니다.";
+  }
+  if (lower.includes("expired") || lower.includes("api key not valid") || lower.includes("invalid api key")) {
+    return "Gemini API 키를 확인할 수 없어 로컬 초안을 생성했습니다. 새 키를 발급해 환경 변수에 다시 등록해 주세요.";
   }
   if (lower.includes("high demand")) {
     return "Gemini 모델 사용량이 많아 로컬 초안을 생성했습니다. 잠시 뒤 다시 시도해 주세요.";

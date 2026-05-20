@@ -1,8 +1,15 @@
 import type { ClassSummary, StudentReport, SubjectScore } from "@/lib/grade-parser";
-import { fiveGradeLabel, formatPercentile, formatSigned } from "@/lib/grade-parser";
 
 export type MessageMode = "individual" | "class";
 export type Tone = "warm" | "formal" | "brief";
+
+export type ClassContext = {
+  year?: string | null;
+  semester?: string | null;
+  grade?: string | null;
+  classNumber?: string | null;
+  examName?: string | null;
+};
 
 export type GenerateRequest = {
   mode: MessageMode;
@@ -11,6 +18,7 @@ export type GenerateRequest = {
   teacherName?: string;
   student?: StudentReport;
   classSummary?: ClassSummary;
+  classContext?: ClassContext;
 };
 
 function toneLabel(tone: Tone): string {
@@ -19,73 +27,103 @@ function toneLabel(tone: Tone): string {
   return "따뜻하고 격려하는";
 }
 
-function subjectRankText(subject: SubjectScore | null): string {
-  if (!subject) return "확인된 과목 없음";
-  const rank = subject.rank !== null && subject.participants ? `${subject.rankLabel ?? subject.rank}/${subject.participants}명` : "석차 없음";
-  const grade = subject.fiveGrade ? fiveGradeLabel(subject.fiveGrade) : "등급 산출 불가";
-  const percentile = formatPercentile(subject.percentile);
-  return `${subject.subject}(${grade}, ${percentile}, ${rank})`;
+function studyAdvice(subject: SubjectScore | null): string {
+  if (!subject) {
+    return "수업 시간에 다룬 핵심 개념을 짧게 정리하고, 틀린 문제를 다시 풀어 보며 스스로 설명하는 연습을 이어가면 좋겠습니다.";
+  }
+
+  const name = subject.subject;
+  if (/문학|독서|국어|화법|작문/.test(name)) {
+    return `${name} 과목은 지문을 빠르게 넘기기보다 근거 문장에 밑줄을 긋고, 오답 선지가 왜 틀렸는지 한 줄로 정리하는 연습이 도움이 되겠습니다.`;
+  }
+  if (/대수|수학|미적|확률|기하/.test(name)) {
+    return `${name} 과목은 풀이 과정을 눈으로만 확인하지 말고, 막힌 단계와 사용한 개념을 따로 표시해 같은 유형을 다시 풀어 보는 방식이 좋겠습니다.`;
+  }
+  if (/영어/.test(name)) {
+    return `${name} 과목은 지문 구조를 먼저 파악하고, 모르는 어휘를 문장 속에서 다시 확인하는 복습 루틴을 만들면 안정감을 높일 수 있겠습니다.`;
+  }
+  if (/물리|화학|생명|지구|과학/.test(name)) {
+    return `${name} 과목은 개념 정의와 그래프, 표, 실험 조건을 연결해 정리하고 계산형 문제는 풀이 순서를 반복 점검하는 공부가 필요합니다.`;
+  }
+  return `${name} 과목은 수업 자료의 핵심 개념을 먼저 정리한 뒤, 틀린 문제의 원인을 개념 부족, 조건 해석, 시간 관리로 나누어 복습하면 좋겠습니다.`;
 }
 
-function subjectLine(report: StudentReport): string {
-  return `강점: ${subjectRankText(report.strongestSubject)}, 보완: ${subjectRankText(report.focusSubject)}`;
+function classLabel(context?: ClassContext): string {
+  const grade = context?.grade ? `${context.grade}학년` : "[학년]";
+  const classNumber = context?.classNumber ? `${context.classNumber}반` : "[반]";
+  return `${grade} ${classNumber}`;
 }
 
 export function buildLocalDraft(input: GenerateRequest): string {
   if (input.mode === "class") {
     const summary = input.classSummary;
     if (!summary) return "학급 분석 자료를 먼저 불러와 주세요.";
-    const focus = summary.focusSubjects.map((subject) => `${subject.subject}(${fiveGradeLabel(subject.averageFiveGrade)})`).join(", ") || "보완 과목 없음";
-    const top = summary.topSubjects.map((subject) => `${subject.subject}(${fiveGradeLabel(subject.averageFiveGrade)})`).join(", ") || "강점 과목 없음";
+    const klass = classLabel(input.classContext);
+
     return [
-      "학부모님께.",
-      `${summary.studentCount}명 성적을 살펴본 결과, 학급 평균은 ${summary.classAverage ?? "-"}점, 5등급제 기준 평균 등급은 ${fiveGradeLabel(summary.averageFiveGrade)}이며 과목 평균 대비 차이는 ${formatSigned(summary.averageGap)}점입니다.`,
-      `석차를 함께 고려했을 때 상대적으로 안정적인 흐름을 보인 과목은 ${top}이고, 다음 기간에 함께 점검하면 좋을 과목은 ${focus}입니다.`,
-      "가정에서는 결과 자체보다 학습 습관, 오답 정리, 질문하는 태도가 이어질 수 있도록 격려해 주시면 학교에서도 학생별 상황에 맞춰 꾸준히 살피겠습니다.",
+      "학부모님, 안녕하십니까?",
+      `한 학기의 흐름 속에서 ${klass} 학생들의 성적 통지표를 보내드립니다. 그동안 아이들이 건강하게 학교생활을 이어갈 수 있도록 관심과 격려로 함께해 주신 학부모님들께 감사드립니다.`,
+      "이번 성적표는 단순한 숫자의 결과라기보다, 학생들이 수업 속에서 고민하고 질문하며 자신의 속도로 쌓아 온 과정의 기록입니다. 기대한 만큼의 결과에 기뻐하는 학생도 있고, 아쉬움을 느끼는 학생도 있겠지만, 중요한 것은 이 결과를 다음 성장을 위한 출발점으로 삼는 일이라 생각합니다.",
+      "가정에서도 성적을 질책하기보다 아이가 어떤 부분을 성실히 해냈는지 먼저 들어주시고, 다음에는 어떤 습관을 조금 더 보완하면 좋을지 차분히 이야기해 주시면 좋겠습니다. 학교에서도 학생들이 스스로의 가능성을 믿고 꾸준히 나아갈 수 있도록 살피고 지도하겠습니다.",
+      "가정에 건강과 평안이 늘 함께하시기를 바랍니다. 감사합니다.",
     ].join("\n\n");
   }
 
   const student = input.student;
   if (!student) return "학생을 먼저 선택해 주세요.";
   const teacher = input.teacherName ? `\n\n${input.teacherName} 드림` : "";
-  const scoreText = input.includeScores
-    ? ` 평균은 ${student.averageScore ?? "-"}점, 과목 평균 대비 ${formatSigned(student.averageDelta)}점, 5등급제 기준 평균은 ${fiveGradeLabel(student.averageFiveGrade)}입니다.`
-    : ` 5등급제 기준 평균은 ${fiveGradeLabel(student.averageFiveGrade)}입니다.`;
+  const focus = student.focusSubject;
+  const strength = student.strongestSubject;
+  const opening = input.includeScores && student.averageScore !== null
+    ? `이번 평가의 전반적인 결과를 살펴보면 평균은 ${student.averageScore}점이며,`
+    : "이번 평가 결과를 살펴보면";
+
   return [
     `${student.name} 학부모님께.`,
-    `${student.name} 학생의 이번 평가를 석차와 과목 평균을 함께 보며 살펴보았습니다.${scoreText} ${subjectLine(student)} 흐름이 확인됩니다.`,
-    "잘 해낸 부분은 자신감으로 이어가고, 보완이 필요한 과목은 오답 원인과 공부 시간을 함께 점검하면 다음 평가에서 더 안정적인 변화를 만들 수 있겠습니다.",
-    "학교에서도 수업 참여와 학습 습관을 지속적으로 살피며 필요한 도움을 이어가겠습니다.",
+    `${opening} ${student.name} 학생은 ${strength?.subject ?? "몇몇 과목"}에서 스스로 해낸 부분을 바탕으로 자신감을 이어갈 수 있겠습니다. 앞으로는 ${focus?.subject ?? "보완이 필요한 과목"} 학습을 조금 더 계획적으로 다듬어 가면 좋겠습니다.`,
+    studyAdvice(focus),
+    "가정에서는 결과를 먼저 평가하기보다 아이가 어떤 방식으로 공부했는지, 어느 부분에서 막혔는지 차분히 이야기 나누어 주세요. 하루 공부 시간을 크게 늘리기보다 오답을 다시 설명해 보기, 다음 시험 전까지 작은 목표를 정하기처럼 실천 가능한 약속을 함께 세워 주시면 도움이 되겠습니다.",
+    "학교에서도 수업 참여와 학습 습관을 꾸준히 살피며 필요한 부분을 함께 지도하겠습니다.",
   ].join("\n\n") + teacher;
 }
 
 export function buildPrompt(input: GenerateRequest): string {
   const sharedRules = [
     "한국 고등학교 담임교사가 학부모에게 보내는 문안으로 작성한다.",
-    "학생을 낙인찍거나 비교하지 않는다.",
-    "순위와 등급은 분석에 반영하되 과도하게 강조하지 않는다.",
-    "2022 개정 교육과정 5등급제 기준은 1등급 상위 10%, 2등급 누적 34%, 3등급 누적 66%, 4등급 누적 90%, 5등급 누적 100%로 본다.",
-    "동석차가 있는 경우 제공된 midRank와 percentile을 기준으로 해석한다.",
-    "학업 결과, 노력 방향, 가정에서 도울 수 있는 행동을 균형 있게 담는다.",
+    "학생을 낙인찍거나 다른 학생과 비교하지 않는다.",
+    "제공된 성적, 석차, 5등급제 분석은 내부 판단에만 사용하고 문안은 교육적 조언으로 풀어 쓴다.",
+    "학업 결과, 다음 공부 방향, 가정에서 도울 수 있는 행동을 균형 있게 담는다.",
     "과장된 약속이나 진단적 표현을 피한다.",
     `문체는 ${toneLabel(input.tone)} 톤으로 한다.`,
-    input.includeScores ? "필요한 경우 점수, 석차, 5등급제 추정 등급을 자연스럽게 포함한다." : "구체적인 점수 숫자는 쓰지 말고 석차/등급 흐름은 부드럽게 반영한다.",
   ];
 
   if (input.mode === "class") {
     return [
       sharedRules.join("\n"),
-      "단체 메시지이므로 학생 이름을 언급하지 않는다.",
-      "300자에서 500자 사이의 본문으로 작성한다.",
-      "학급 요약 JSON:",
+      "단체 메시지는 학급 전체에 공통으로 들어가는 가정통신문이다.",
+      "개별 학생, 특정 과목, 평균 점수, 석차, 등급, 백분위, 우수/부진 학생 수를 직접 언급하지 않는다.",
+      "학급 전체의 전반적인 분위기, 학생들이 한 학기 동안 노력한 과정, 결과를 바라보는 태도, 가정에서의 따뜻한 격려 요청을 중심으로 쓴다.",
+      "사용자가 준 예시처럼 학부모에게 감사 인사를 전하고, 성적표를 성장 과정의 기록으로 바라보도록 안내한다.",
+      "학년과 반 정보가 있으면 자연스럽게 포함한다.",
+      "650자에서 950자 사이의 본문으로 작성한다.",
+      "학급 맥락 JSON:",
+      JSON.stringify(input.classContext, null, 2),
+      "학급 요약 JSON(문안에 숫자로 직접 쓰지 말고 분위기 판단에만 사용):",
       JSON.stringify(input.classSummary, null, 2),
     ].join("\n\n");
   }
 
   return [
     sharedRules.join("\n"),
-    "개별 메시지이므로 학생 이름을 자연스럽게 1회 이상 포함한다.",
-    "350자에서 650자 사이의 본문으로 작성한다.",
+    "개별 메시지는 해당 학생의 다음 공부 방향을 제안하는 데 집중한다.",
+    "등급, 등급대, 1-5등급, 석차, 백분위, 상위 몇 %, 평균 등급이라는 표현을 직접 쓰지 않는다.",
+    input.includeScores
+      ? "점수는 꼭 필요할 때만 한 번 정도 부드럽게 언급할 수 있으나, 핵심은 공부 방법 조언이어야 한다."
+      : "구체적인 점수 숫자도 쓰지 않는다.",
+    "강점 과목은 자신감을 이어갈 근거로, 보완 과목은 구체적인 학습 전략으로 풀어 쓴다.",
+    "가정에서는 질책보다 대화, 오답 설명, 짧은 목표 설정, 학습 루틴 점검을 도와 달라는 내용을 포함한다.",
+    "학생 이름을 자연스럽게 1회 이상 포함한다.",
+    "450자에서 750자 사이의 본문으로 작성한다.",
     "학생 요약 JSON:",
     JSON.stringify(input.student, null, 2),
   ].join("\n\n");

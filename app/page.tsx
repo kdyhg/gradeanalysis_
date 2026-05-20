@@ -175,6 +175,16 @@ export default function Home() {
           teacherName,
           student: mode === "individual" ? selectedStudent : undefined,
           classSummary: mode === "class" ? summary : undefined,
+          classContext:
+            mode === "class" && reports[0]
+              ? {
+                  year: reports[0].year,
+                  semester: reports[0].semester,
+                  grade: reports[0].grade,
+                  classNumber: reports[0].classNumber,
+                  examName: reports[0].examName,
+                }
+              : undefined,
         }),
       });
       const data = (await response.json()) as { message?: string; source?: MessageSource; notice?: string; error?: string };
