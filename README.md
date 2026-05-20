@@ -36,7 +36,7 @@ npm run dev
 
 ```bash
 GEMINI_API_KEY=your-gemini-api-key
-GEMINI_MODEL=gemini-2.0-flash
+GEMINI_MODEL=gemini-2.5-flash-lite
 ```
 
 OpenAI를 보조 공급자로 쓰려면 다음 값도 사용할 수 있습니다.
