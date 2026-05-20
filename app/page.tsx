@@ -247,13 +247,13 @@ export default function Home() {
 
   function generateCounselingMemo() {
     setCounselingMemo(buildCounselingMemo(selectedStudent, selectedObservation));
-    setNotice("상담 참고 메모를 만들었습니다.");
+    setNotice("성적 상담 참고 자료를 만들었습니다.");
   }
 
   async function copyCounselingMemo() {
     if (!counselingMemo) return;
     await navigator.clipboard.writeText(counselingMemo);
-    setNotice("상담 참고 메모를 클립보드에 복사했습니다.");
+    setNotice("성적 상담 참고 자료를 클립보드에 복사했습니다.");
   }
 
   return (
@@ -527,23 +527,23 @@ export default function Home() {
                   <div className="panel-title mini split">
                     <div>
                       <ClipboardList size={18} />
-                      <h3>상담 참고</h3>
+                      <h3>성적 상담 참고</h3>
                     </div>
-                    <button className="icon-button" type="button" onClick={generateCounselingMemo} disabled={!selectedStudent} title="상담 메모 만들기">
+                    <button className="icon-button" type="button" onClick={generateCounselingMemo} disabled={!selectedStudent} title="성적 상담 자료 만들기">
                       <ClipboardList size={18} />
-                      <span>메모 만들기</span>
+                      <span>자료 만들기</span>
                     </button>
                   </div>
                   <textarea
                     className="counseling-textarea"
                     value={counselingMemo}
                     onChange={(event) => setCounselingMemo(event.target.value)}
-                    placeholder="학생 상담 때 참고할 질문, 격려할 부분, 함께 정할 약속"
+                    placeholder="학생 성적자료를 바탕으로 한 보완 지점, 상담 질문, 다음 평가 전 실천 약속"
                   />
                   <div className="message-actions">
-                    <button className="icon-button" type="button" onClick={copyCounselingMemo} disabled={!counselingMemo} title="상담 메모 복사">
+                    <button className="icon-button" type="button" onClick={copyCounselingMemo} disabled={!counselingMemo} title="성적 상담 자료 복사">
                       <Clipboard size={18} />
-                      <span>메모 복사</span>
+                      <span>자료 복사</span>
                     </button>
                   </div>
                 </div>

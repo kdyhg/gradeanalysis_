@@ -1,4 +1,4 @@
-import type { ClassSummary, StudentReport, SubjectScore } from "@/lib/grade-parser";
+import { fiveGradeLabel, formatPercentile, formatSigned, type ClassSummary, type StudentReport, type SubjectScore } from "@/lib/grade-parser";
 
 export type MessageMode = "individual" | "class";
 export type Tone = "warm" | "formal" | "brief";
@@ -60,6 +60,72 @@ function studyAdvice(subject: SubjectScore | null): string {
     return `${name}은 개념과 그래프, 표, 조건을 함께 묶어 정리하고 계산 과정은 순서대로 다시 써 보는 연습이 필요합니다.`;
   }
   return `${name}은 핵심 개념을 먼저 정리하고, 틀린 이유를 개념 이해, 조건 해석, 시간 관리 중 하나로 나누어 복습하면 좋겠습니다.`;
+}
+
+function scoreValue(value: number | null): string {
+  return value === null ? "-" : value.toFixed(1);
+}
+
+function rankValue(subject: SubjectScore): string {
+  if (subject.rank === null || !subject.participants) return "-";
+  return `${subject.rankLabel ?? subject.rank}/${subject.participants}`;
+}
+
+function subjectLine(subject: SubjectScore): string {
+  return [
+    `${compactSubjectName(subject) ?? subject.subject}`,
+    `점수 ${scoreValue(subject.value)}`,
+    `과목평균 ${scoreValue(subject.subjectAverage)}`,
+    `평균 대비 ${formatSigned(subject.deltaFromAverage)}`,
+    `석차 ${rankValue(subject)}`,
+    formatPercentile(subject.percentile),
+    fiveGradeLabel(subject.fiveGrade),
+  ].join(" / ");
+}
+
+function focusReason(subject: SubjectScore): string {
+  const reasons: string[] = [];
+  if (subject.deltaFromAverage !== null && subject.deltaFromAverage <= -8) {
+    reasons.push(`과목평균보다 ${Math.abs(subject.deltaFromAverage).toFixed(1)}점 낮아 기본 개념과 문제 적용 과정을 함께 점검할 필요가 있습니다`);
+  } else if (subject.deltaFromAverage !== null && subject.deltaFromAverage < 0) {
+    reasons.push(`과목평균보다 ${Math.abs(subject.deltaFromAverage).toFixed(1)}점 낮아 오답 원인을 세분화해 보는 상담이 필요합니다`);
+  }
+  if (subject.fiveGrade !== null && subject.fiveGrade >= 4) {
+    reasons.push(`${fiveGradeLabel(subject.fiveGrade)} 구간이므로 다음 평가 전까지 우선 보완 과목으로 잡는 것이 좋습니다`);
+  }
+  if (subject.percentile !== null && subject.percentile >= 66) {
+    reasons.push(`${formatPercentile(subject.percentile)}에 해당해 풀이 정확도와 시간 배분을 확인해 볼 필요가 있습니다`);
+  }
+  return reasons.length ? reasons.join("; ") : "상대적으로 가장 낮은 과목이므로 공부 방법과 준비 과정을 확인해 볼 필요가 있습니다";
+}
+
+function counselingQuestion(subject: SubjectScore): string {
+  const name = compactSubjectName(subject) ?? subject.subject;
+  if (/문학|독서|국어|화법|작문/.test(name)) {
+    return `${name}: 지문을 읽을 때 근거 문장을 찾고 있는지, 오답 선지를 왜 틀렸는지 설명할 수 있는지 확인`;
+  }
+  if (/대수|수학|미적|확률|기하/.test(name)) {
+    return `${name}: 개념을 몰라서 막히는지, 계산 실수인지, 풀이 순서가 끊기는지 학생이 직접 구분하게 하기`;
+  }
+  if (/영어/.test(name)) {
+    return `${name}: 모르는 어휘 때문에 막히는지, 문장 구조나 글의 흐름 파악에서 흔들리는지 확인`;
+  }
+  if (/물리|화학|생명|지구|과학/.test(name)) {
+    return `${name}: 개념, 자료 해석, 계산 과정 중 어디에서 실수가 반복되는지 문제를 보며 확인`;
+  }
+  return `${name}: 틀린 문제를 개념 이해, 조건 해석, 시간 관리 중 어디에 해당하는지 학생이 직접 분류하게 하기`;
+}
+
+function compareFocusPriority(a: SubjectScore, b: SubjectScore): number {
+  const gradeGap = (b.fiveGrade ?? 0) - (a.fiveGrade ?? 0);
+  if (gradeGap !== 0) return gradeGap;
+  return (a.deltaFromAverage ?? 0) - (b.deltaFromAverage ?? 0);
+}
+
+function compareStrengthPriority(a: SubjectScore, b: SubjectScore): number {
+  const gradeGap = (a.fiveGrade ?? 9) - (b.fiveGrade ?? 9);
+  if (gradeGap !== 0) return gradeGap;
+  return (b.deltaFromAverage ?? 0) - (a.deltaFromAverage ?? 0);
 }
 
 function classLabel(context?: ClassContext): string {
@@ -146,31 +212,66 @@ export function buildLocalDraft(input: GenerateRequest): string {
 export function buildCounselingMemo(student: StudentReport | null, observation: string): string {
   if (!student) return "학생을 먼저 선택해 주세요.";
 
-  const strength = compactSubjectName(student.strongestSubject) ?? "수업에서 해낸 부분";
-  const focus = compactSubjectName(student.focusSubject) ?? "학습 습관";
-  const advice = studyAdvice(student.focusSubject);
-  const observed = observation.trim() || "최근 수업 참여, 과제 수행, 질문 태도 중 학생에게 먼저 확인하고 싶은 장면을 적어 두면 좋습니다.";
+  const subjectsWithScores = student.subjects.filter((subject) => subject.value !== null);
+  const focusSubjects =
+    subjectsWithScores
+      .filter((subject) => subject.status === "watch" || (subject.deltaFromAverage !== null && subject.deltaFromAverage < 0))
+      .sort(compareFocusPriority)
+      .slice(0, 3) || [];
+  const fallbackFocus = subjectsWithScores.length ? [...subjectsWithScores].sort(compareFocusPriority).slice(0, 2) : [];
+  const counselingTargets = focusSubjects.length ? focusSubjects : fallbackFocus;
+  const strengths = subjectsWithScores
+    .filter((subject) => subject.status === "strength" || (subject.deltaFromAverage !== null && subject.deltaFromAverage > 0))
+    .sort(compareStrengthPriority)
+    .slice(0, 2);
+  const observed = observation.trim();
+
+  const summary = [
+    `- 전체 평균: ${scoreValue(student.averageScore)} / 과목평균 대비: ${formatSigned(student.averageDelta)} / 5등급제 평균: ${fiveGradeLabel(student.averageFiveGrade)}`,
+    `- 점검 과목 수: ${student.watchCount}개 / 강점 과목 수: ${student.strengthCount}개`,
+  ];
+
+  const targetLines = counselingTargets.length
+    ? counselingTargets.flatMap((subject, index) => [
+        `${index + 1}) ${subjectLine(subject)}`,
+        `   - 해석: ${focusReason(subject)}`,
+        `   - 상담 확인: ${counselingQuestion(subject)}`,
+        `   - 보완 방향: ${studyAdvice(subject)}`,
+      ])
+    : ["- 점수 자료가 부족해 과목별 보완 지점을 자동으로 정하기 어렵습니다. 학생이 어렵게 느낀 과목과 준비 과정을 먼저 확인해 주세요."];
+
+  const strengthLines = strengths.length
+    ? strengths.map((subject) => `- ${subjectLine(subject)}: 이 과목의 준비 방식 중 다른 과목에 옮겨 볼 만한 습관을 학생에게 물어보기`)
+    : ["- 뚜렷한 강점 과목이 보이지 않으면, 과제 수행이나 수업 참여처럼 성적 외의 지속 가능한 장점을 먼저 확인해 주세요."];
+
+  const questionLines = counselingTargets.length
+    ? counselingTargets.map((subject) => `- ${compactSubjectName(subject) ?? subject.subject}에서 틀린 문제를 2개만 골라, 왜 틀렸는지 학생 말로 설명하게 하기`)
+    : ["- 이번 평가 준비에서 가장 시간이 많이 걸린 과목과 실제 점수가 잘 나오지 않은 이유를 구분해 보기"];
 
   return [
-    `[${student.name} 상담 참고]`,
+    `[${student.name} 성적 상담 참고 자료]`,
     "",
-    "1. 먼저 물어볼 질문",
-    "- 이번 시험을 준비하면서 스스로 가장 잘했다고 생각하는 부분은 무엇인지",
-    "- 공부하다가 가장 자주 막힌 순간은 언제였는지",
-    "- 다음 평가 전까지 바꾸고 싶은 공부 습관이 하나 있다면 무엇인지",
+    "1. 성적자료로 본 현재 위치",
+    ...summary,
     "",
-    "2. 담임 관찰 포인트",
-    `- ${observed}`,
+    "2. 우선 상담할 보완 지점",
+    ...targetLines,
     "",
-    "3. 격려할 부분",
-    `- ${strength}에서 보인 태도나 끝까지 해낸 경험을 먼저 짚어 주기`,
+    "3. 강점으로 연결할 부분",
+    ...strengthLines,
     "",
-    "4. 함께 정할 한 가지 약속",
-    `- ${focus}: ${advice}`,
-    "- 약속은 크게 잡기보다 매일 10분 복습, 오답 2문제 설명하기, 과제 계획 확인처럼 확인 가능한 행동으로 정하기",
+    "4. 상담 중 확인하면 좋은 질문",
+    "- 이번 평가에서 준비한 시간과 실제 효과가 맞았는지 확인하기",
+    "- 문제를 틀린 이유가 개념 부족, 문제 해석, 계산/실수, 시간 부족 중 어디에 가까운지 학생 스스로 고르게 하기",
+    ...questionLines,
     "",
-    "5. 마무리 문장",
-    "- 결과보다 다음에 바꿀 수 있는 방법을 함께 찾자는 방향으로 마무리하기",
+    "5. 다음 평가 전 약속 예시",
+    "- 보완 과목은 한 번에 많이 잡기보다 1~2개로 정하기",
+    "- 매일 10분 개념 정리, 오답 2문제 재풀이, 풀이 과정 말로 설명하기 중 하나를 학생이 직접 선택하게 하기",
+    "- 2주 뒤 확인할 증거를 정하기: 오답노트 사진, 다시 푼 문제, 개념 요약 한 장 등",
+    "",
+    "6. 담임 관찰내용",
+    observed ? `- ${observed}` : "- 수업 참여, 과제 수행, 질문 태도 중 상담 때 연결할 관찰내용을 입력하면 이 부분에 함께 반영됩니다.",
   ].join("\n");
 }
 
