@@ -1,6 +1,14 @@
 import OpenAI from "openai";
 import { NextRequest, NextResponse } from "next/server";
-import { buildCounselingMemo, buildCounselingPrompt, type CounselingRequest } from "@/lib/local-message";
+import {
+  buildCounselingMemo,
+  buildCounselingPrompt,
+  buildLocalCounselingGuide,
+  counselingGuideToMemo,
+  type CounselingFocusItem,
+  type CounselingGuide,
+  type CounselingRequest,
+} from "@/lib/local-message";
 
 export const runtime = "nodejs";
 
@@ -49,6 +57,61 @@ function friendlyAiNotice(message: string): string {
     return "Gemini 모델 사용량이 많아 로컬 상담 자료를 생성했습니다. 잠시 뒤 다시 시도해 주세요.";
   }
   return message;
+}
+
+function parseJsonObject(text: string): unknown {
+  const trimmed = text.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "");
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    const start = trimmed.indexOf("{");
+    const end = trimmed.lastIndexOf("}");
+    if (start >= 0 && end > start) {
+      return JSON.parse(trimmed.slice(start, end + 1));
+    }
+    throw new Error("AI 상담 자료 형식을 읽지 못했습니다.");
+  }
+}
+
+function stringArray(value: unknown, fallback: string[]): string[] {
+  if (!Array.isArray(value)) return fallback;
+  const items = value.map((item) => (typeof item === "string" ? item.trim() : "")).filter(Boolean);
+  return items.length ? items : fallback;
+}
+
+function focusItems(value: unknown, fallback: CounselingFocusItem[]): CounselingFocusItem[] {
+  if (!Array.isArray(value)) return fallback;
+  const items = value
+    .map((item) => {
+      if (!item || typeof item !== "object") return null;
+      const record = item as Partial<CounselingFocusItem>;
+      return {
+        subject: typeof record.subject === "string" && record.subject.trim() ? record.subject.trim() : "보완 과목",
+        evidence: typeof record.evidence === "string" && record.evidence.trim() ? record.evidence.trim() : "근거 수치 확인 필요",
+        issue: typeof record.issue === "string" && record.issue.trim() ? record.issue.trim() : "상담 중 확인할 지점이 필요합니다.",
+        strategy: typeof record.strategy === "string" && record.strategy.trim() ? record.strategy.trim() : "학습 방법을 함께 정합니다.",
+        question: typeof record.question === "string" && record.question.trim() ? record.question.trim() : "어디에서 막혔는지 학생 말로 설명하게 합니다.",
+      };
+    })
+    .filter((item): item is CounselingFocusItem => Boolean(item));
+  return items.length ? items.slice(0, 3) : fallback;
+}
+
+function normalizeGuide(value: unknown, fallback: CounselingGuide): CounselingGuide {
+  const record = value && typeof value === "object" ? (value as Partial<CounselingGuide>) : {};
+  return {
+    summary: stringArray(record.summary, fallback.summary).slice(0, 4),
+    focusSubjects: focusItems(record.focusSubjects, fallback.focusSubjects),
+    strengths: stringArray(record.strengths, fallback.strengths).slice(0, 3),
+    questions: stringArray(record.questions, fallback.questions).slice(0, 6),
+    actionPlan: stringArray(record.actionPlan, fallback.actionPlan).slice(0, 5),
+    teacherObservation:
+      typeof record.teacherObservation === "string" && record.teacherObservation.trim()
+        ? record.teacherObservation.trim()
+        : fallback.teacherObservation,
+    closingNote:
+      typeof record.closingNote === "string" && record.closingNote.trim() ? record.closingNote.trim() : fallback.closingNote,
+  };
 }
 
 async function generateWithGemini(prompt: string): Promise<string> {
@@ -104,21 +167,28 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "학생 성적자료가 필요합니다." }, { status: 400 });
   }
 
-  const fallback = buildCounselingMemo(body.student ?? null, body.teacherObservation ?? "");
+  const fallbackGuide = buildLocalCounselingGuide(body);
+  const fallback = fallbackGuide ? counselingGuideToMemo(fallbackGuide, body.student?.name) : buildCounselingMemo(body.student ?? null, body.teacherObservation ?? "");
   const prompt = buildCounselingPrompt(body);
 
   try {
     if (GEMINI_API_KEY) {
+      const generated = await generateWithGemini(prompt);
+      const guide = fallbackGuide ? normalizeGuide(parseJsonObject(generated), fallbackGuide) : null;
       return NextResponse.json({
-        memo: (await generateWithGemini(prompt)) || fallback,
+        memo: guide ? counselingGuideToMemo(guide, body.student?.name) : generated || fallback,
+        guide,
         source: "gemini",
         model: GEMINI_MODEL,
       });
     }
 
     if (process.env.OPENAI_API_KEY) {
+      const generated = await generateWithOpenAI(prompt);
+      const guide = fallbackGuide ? normalizeGuide(parseJsonObject(generated), fallbackGuide) : null;
       return NextResponse.json({
-        memo: (await generateWithOpenAI(prompt)) || fallback,
+        memo: guide ? counselingGuideToMemo(guide, body.student?.name) : generated || fallback,
+        guide,
         source: "openai",
         model: OPENAI_MODEL,
       });
@@ -126,6 +196,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       memo: fallback,
+      guide: fallbackGuide,
       source: "local",
       notice: "API 키가 없어 로컬 상담 자료를 생성했습니다.",
     });
@@ -133,6 +204,7 @@ export async function POST(request: NextRequest) {
     const message = error instanceof Error ? error.message : "AI 요청 중 오류가 발생했습니다.";
     return NextResponse.json({
       memo: fallback,
+      guide: fallbackGuide,
       source: "local",
       notice: friendlyAiNotice(message),
     });

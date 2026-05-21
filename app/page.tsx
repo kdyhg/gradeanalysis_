@@ -25,7 +25,7 @@ import {
   type StudentReport,
   type SubjectScore,
 } from "@/lib/grade-parser";
-import type { MessageMode, Tone } from "@/lib/local-message";
+import type { CounselingGuide, MessageMode, Tone } from "@/lib/local-message";
 
 type MessageSource = "idle" | "openai" | "gemini" | "local";
 type WorkSection = "message" | "counseling";
@@ -100,6 +100,7 @@ export default function Home() {
   const [observations, setObservations] = useState<Record<string, string>>({});
   const [message, setMessage] = useState("");
   const [counselingMemo, setCounselingMemo] = useState("");
+  const [counselingGuide, setCounselingGuide] = useState<CounselingGuide | null>(null);
   const [notice, setNotice] = useState("");
   const [messageSource, setMessageSource] = useState<MessageSource>("idle");
   const [counselingSource, setCounselingSource] = useState<MessageSource>("idle");
@@ -121,6 +122,7 @@ export default function Home() {
     setCounselingSource("idle");
     setObservations({});
     setCounselingMemo("");
+    setCounselingGuide(null);
 
     try {
       const ExcelJS = await import("exceljs");
@@ -274,9 +276,10 @@ export default function Home() {
           },
         }),
       });
-      const data = (await response.json()) as { memo?: string; source?: MessageSource; notice?: string; error?: string };
+      const data = (await response.json()) as { memo?: string; guide?: CounselingGuide | null; source?: MessageSource; notice?: string; error?: string };
       if (!response.ok) throw new Error(data.error ?? "상담 자료 생성에 실패했습니다.");
       setCounselingMemo(data.memo ?? "");
+      setCounselingGuide(data.guide ?? null);
       setCounselingSource(data.source ?? "local");
       setNotice(data.notice ?? "");
     } catch (error) {
@@ -381,6 +384,7 @@ export default function Home() {
                     onClick={() => {
                       setSelectedId(report.id);
                       setCounselingMemo("");
+                      setCounselingGuide(null);
                       setCounselingSource("idle");
                     }}
                   >
@@ -592,12 +596,99 @@ export default function Home() {
                     <span>{isGeneratingCounseling ? "생성 중" : "상담 자료 생성"}</span>
                   </button>
 
-                  <textarea
-                    className="counseling-textarea"
-                    value={counselingMemo}
-                    onChange={(event) => setCounselingMemo(event.target.value)}
-                    placeholder="AI가 학생 성적자료를 바탕으로 보완 지점, 상담 질문, 다음 평가 전 실천 계획을 정리합니다."
-                  />
+                  {counselingGuide ? (
+                    <div className="counseling-board" aria-label="상담 진행 보드">
+                      <section className="counseling-summary">
+                        <h3>핵심 요약</h3>
+                        <div className="summary-chips">
+                          {counselingGuide.summary.map((item, index) => (
+                            <span key={`${item}-${index}`}>{item}</span>
+                          ))}
+                        </div>
+                      </section>
+
+                      <section className="counseling-section">
+                        <h3>우선 보완</h3>
+                        <div className="focus-stack">
+                          {counselingGuide.focusSubjects.map((item, index) => (
+                            <article className="focus-card" key={`${item.subject}-${index}`}>
+                              <div className="focus-card-head">
+                                <strong>{item.subject}</strong>
+                                <span>{index + 1}순위</span>
+                              </div>
+                              <p className="evidence">{item.evidence}</p>
+                              <dl>
+                                <div>
+                                  <dt>확인</dt>
+                                  <dd>{item.issue}</dd>
+                                </div>
+                                <div>
+                                  <dt>보완</dt>
+                                  <dd>{item.strategy}</dd>
+                                </div>
+                                <div>
+                                  <dt>질문</dt>
+                                  <dd>{item.question}</dd>
+                                </div>
+                              </dl>
+                            </article>
+                          ))}
+                        </div>
+                      </section>
+
+                      <section className="counseling-section">
+                        <h3>질문 체크</h3>
+                        <div className="checklist">
+                          {counselingGuide.questions.map((item, index) => (
+                            <label key={`${item}-${index}`}>
+                              <input type="checkbox" />
+                              <span>{item}</span>
+                            </label>
+                          ))}
+                        </div>
+                      </section>
+
+                      <section className="counseling-section">
+                        <h3>2주 실천 계획</h3>
+                        <ol className="action-plan">
+                          {counselingGuide.actionPlan.map((item, index) => (
+                            <li key={`${item}-${index}`}>{item}</li>
+                          ))}
+                        </ol>
+                      </section>
+
+                      <section className="counseling-section">
+                        <h3>강점 연결</h3>
+                        <ul className="compact-list">
+                          {counselingGuide.strengths.map((item, index) => (
+                            <li key={`${item}-${index}`}>{item}</li>
+                          ))}
+                        </ul>
+                      </section>
+
+                      {(counselingGuide.teacherObservation || counselingGuide.closingNote) && (
+                        <section className="counseling-note">
+                          {counselingGuide.teacherObservation && <p>{counselingGuide.teacherObservation}</p>}
+                          <strong>{counselingGuide.closingNote}</strong>
+                        </section>
+                      )}
+
+                      <details className="raw-memo">
+                        <summary>전체 원문</summary>
+                        <textarea
+                          className="counseling-textarea"
+                          value={counselingMemo}
+                          onChange={(event) => setCounselingMemo(event.target.value)}
+                        />
+                      </details>
+                    </div>
+                  ) : (
+                    <div className="counseling-empty">
+                      <ClipboardList size={28} />
+                      <strong>상담 자료를 생성해 주세요</strong>
+                      <span>생성 후에는 핵심 요약, 보완 과목, 질문 체크, 2주 실천 계획이 한 화면에 정리됩니다.</span>
+                    </div>
+                  )}
 
                   <div className="message-actions">
                     <button className="icon-button" type="button" onClick={copyCounselingMemo} disabled={!counselingMemo} title="성적 상담 자료 복사">

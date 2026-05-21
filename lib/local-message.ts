@@ -28,6 +28,24 @@ export type CounselingRequest = {
   classContext?: ClassContext;
 };
 
+export type CounselingFocusItem = {
+  subject: string;
+  evidence: string;
+  issue: string;
+  strategy: string;
+  question: string;
+};
+
+export type CounselingGuide = {
+  summary: string[];
+  focusSubjects: CounselingFocusItem[];
+  strengths: string[];
+  questions: string[];
+  actionPlan: string[];
+  teacherObservation: string | null;
+  closingNote: string;
+};
+
 type MessageStudentContext = {
   name: string;
   observation: string | null;
@@ -215,6 +233,106 @@ function counselingContext(input: CounselingRequest) {
   };
 }
 
+function localCounselingTargets(student: StudentReport) {
+  const subjectsWithScores = student.subjects.filter((subject) => subject.value !== null);
+  const focusSubjects =
+    subjectsWithScores
+      .filter((subject) => subject.status === "watch" || (subject.deltaFromAverage !== null && subject.deltaFromAverage < 0))
+      .sort(compareFocusPriority)
+      .slice(0, 3) || [];
+  const fallbackFocus = subjectsWithScores.length ? [...subjectsWithScores].sort(compareFocusPriority).slice(0, 2) : [];
+  const counselingTargets = focusSubjects.length ? focusSubjects : fallbackFocus;
+  const strengths = subjectsWithScores
+    .filter((subject) => subject.status === "strength" || (subject.deltaFromAverage !== null && subject.deltaFromAverage > 0))
+    .sort(compareStrengthPriority)
+    .slice(0, 2);
+
+  return { counselingTargets, strengths };
+}
+
+export function buildLocalCounselingGuide(input: CounselingRequest): CounselingGuide | null {
+  const student = input.student;
+  if (!student) return null;
+
+  const { counselingTargets, strengths } = localCounselingTargets(student);
+  const teacherObservation = input.teacherObservation?.trim() || null;
+
+  return {
+    summary: [
+      `전체 평균 ${scoreValue(student.averageScore)}, 과목평균 대비 ${formatSigned(student.averageDelta)}`,
+      `5등급제 평균 ${fiveGradeLabel(student.averageFiveGrade)}, 점검 과목 ${student.watchCount}개`,
+      `상담은 보완 과목을 1~2개로 좁히고, 학생이 원인을 직접 말하게 하는 흐름이 좋습니다.`,
+    ],
+    focusSubjects: counselingTargets.length
+      ? counselingTargets.map((subject) => ({
+          subject: compactSubjectName(subject) ?? subject.subject,
+          evidence: subjectLine(subject),
+          issue: focusReason(subject),
+          strategy: studyAdvice(subject),
+          question: counselingQuestion(subject),
+        }))
+      : [
+          {
+            subject: "자료 확인",
+            evidence: "점수 자료가 부족합니다.",
+            issue: "과목별 보완 지점을 자동으로 정하기 어렵습니다.",
+            strategy: "학생이 어렵게 느낀 과목과 실제 준비 과정을 먼저 확인해 주세요.",
+            question: "이번 평가에서 가장 준비가 어려웠던 과목과 이유를 물어보기",
+          },
+        ],
+    strengths: strengths.length
+      ? strengths.map((subject) => `${subjectLine(subject)}: 이 과목의 준비 방식 중 다른 과목에 옮겨 볼 습관을 물어보기`)
+      : ["뚜렷한 강점 과목이 보이지 않으면, 과제 수행이나 수업 참여처럼 지속 가능한 장점을 먼저 확인해 주세요."],
+    questions: [
+      "이번 평가에서 준비한 시간과 실제 효과가 맞았는지 확인하기",
+      "틀린 이유가 개념 부족, 문제 해석, 계산/실수, 시간 부족 중 어디에 가까운지 학생 스스로 고르게 하기",
+      ...(counselingTargets.length
+        ? counselingTargets.map((subject) => `${compactSubjectName(subject) ?? subject.subject}에서 틀린 문제 2개를 골라 왜 틀렸는지 말로 설명하게 하기`)
+        : ["가장 시간이 많이 걸린 과목과 실제 점수가 잘 나오지 않은 이유를 구분해 보기"]),
+    ],
+    actionPlan: [
+      "보완 과목은 한 번에 많이 잡기보다 1~2개로 정하기",
+      "매일 10분 개념 정리, 오답 2문제 재풀이, 풀이 과정 말로 설명하기 중 하나를 학생이 직접 선택하게 하기",
+      "2주 뒤 확인할 증거 정하기: 오답노트 사진, 다시 푼 문제, 개념 요약 한 장 등",
+    ],
+    teacherObservation,
+    closingNote: "결과를 평가하는 상담보다, 다음 평가 전 무엇을 바꿀지 학생이 직접 정하게 하는 상담으로 마무리합니다.",
+  };
+}
+
+export function counselingGuideToMemo(guide: CounselingGuide, studentName = "학생"): string {
+  return [
+    `[${studentName} 성적 상담 참고 자료]`,
+    "",
+    "1. 핵심 요약",
+    ...guide.summary.map((item) => `- ${item}`),
+    "",
+    "2. 우선 상담할 보완 과목",
+    ...guide.focusSubjects.flatMap((item, index) => [
+      `${index + 1}) ${item.subject}`,
+      `   - 근거: ${item.evidence}`,
+      `   - 확인할 지점: ${item.issue}`,
+      `   - 보완 방법: ${item.strategy}`,
+      `   - 질문: ${item.question}`,
+    ]),
+    "",
+    "3. 강점으로 연결할 부분",
+    ...guide.strengths.map((item) => `- ${item}`),
+    "",
+    "4. 상담 중 질문",
+    ...guide.questions.map((item) => `- ${item}`),
+    "",
+    "5. 다음 평가 전 실천 계획",
+    ...guide.actionPlan.map((item) => `- ${item}`),
+    "",
+    "6. 담임 관찰내용",
+    guide.teacherObservation ? `- ${guide.teacherObservation}` : "- 입력된 관찰내용이 없습니다.",
+    "",
+    "7. 마무리",
+    `- ${guide.closingNote}`,
+  ].join("\n");
+}
+
 export function buildLocalDraft(input: GenerateRequest): string {
   if (input.mode === "class") {
     const klass = classLabel(input.classContext);
@@ -252,83 +370,46 @@ export function buildLocalDraft(input: GenerateRequest): string {
 export function buildCounselingMemo(student: StudentReport | null, observation: string): string {
   if (!student) return "학생을 먼저 선택해 주세요.";
 
-  const subjectsWithScores = student.subjects.filter((subject) => subject.value !== null);
-  const focusSubjects =
-    subjectsWithScores
-      .filter((subject) => subject.status === "watch" || (subject.deltaFromAverage !== null && subject.deltaFromAverage < 0))
-      .sort(compareFocusPriority)
-      .slice(0, 3) || [];
-  const fallbackFocus = subjectsWithScores.length ? [...subjectsWithScores].sort(compareFocusPriority).slice(0, 2) : [];
-  const counselingTargets = focusSubjects.length ? focusSubjects : fallbackFocus;
-  const strengths = subjectsWithScores
-    .filter((subject) => subject.status === "strength" || (subject.deltaFromAverage !== null && subject.deltaFromAverage > 0))
-    .sort(compareStrengthPriority)
-    .slice(0, 2);
-  const observed = observation.trim();
-
-  const summary = [
-    `- 전체 평균: ${scoreValue(student.averageScore)} / 과목평균 대비: ${formatSigned(student.averageDelta)} / 5등급제 평균: ${fiveGradeLabel(student.averageFiveGrade)}`,
-    `- 점검 과목 수: ${student.watchCount}개 / 강점 과목 수: ${student.strengthCount}개`,
-  ];
-
-  const targetLines = counselingTargets.length
-    ? counselingTargets.flatMap((subject, index) => [
-        `${index + 1}) ${subjectLine(subject)}`,
-        `   - 해석: ${focusReason(subject)}`,
-        `   - 상담 확인: ${counselingQuestion(subject)}`,
-        `   - 보완 방향: ${studyAdvice(subject)}`,
-      ])
-    : ["- 점수 자료가 부족해 과목별 보완 지점을 자동으로 정하기 어렵습니다. 학생이 어렵게 느낀 과목과 준비 과정을 먼저 확인해 주세요."];
-
-  const strengthLines = strengths.length
-    ? strengths.map((subject) => `- ${subjectLine(subject)}: 이 과목의 준비 방식 중 다른 과목에 옮겨 볼 만한 습관을 학생에게 물어보기`)
-    : ["- 뚜렷한 강점 과목이 보이지 않으면, 과제 수행이나 수업 참여처럼 성적 외의 지속 가능한 장점을 먼저 확인해 주세요."];
-
-  const questionLines = counselingTargets.length
-    ? counselingTargets.map((subject) => `- ${compactSubjectName(subject) ?? subject.subject}에서 틀린 문제를 2개만 골라, 왜 틀렸는지 학생 말로 설명하게 하기`)
-    : ["- 이번 평가 준비에서 가장 시간이 많이 걸린 과목과 실제 점수가 잘 나오지 않은 이유를 구분해 보기"];
-
-  return [
-    `[${student.name} 성적 상담 참고 자료]`,
-    "",
-    "1. 성적자료로 본 현재 위치",
-    ...summary,
-    "",
-    "2. 우선 상담할 보완 지점",
-    ...targetLines,
-    "",
-    "3. 강점으로 연결할 부분",
-    ...strengthLines,
-    "",
-    "4. 상담 중 확인하면 좋은 질문",
-    "- 이번 평가에서 준비한 시간과 실제 효과가 맞았는지 확인하기",
-    "- 문제를 틀린 이유가 개념 부족, 문제 해석, 계산/실수, 시간 부족 중 어디에 가까운지 학생 스스로 고르게 하기",
-    ...questionLines,
-    "",
-    "5. 다음 평가 전 약속 예시",
-    "- 보완 과목은 한 번에 많이 잡기보다 1~2개로 정하기",
-    "- 매일 10분 개념 정리, 오답 2문제 재풀이, 풀이 과정 말로 설명하기 중 하나를 학생이 직접 선택하게 하기",
-    "- 2주 뒤 확인할 증거를 정하기: 오답노트 사진, 다시 푼 문제, 개념 요약 한 장 등",
-    "",
-    "6. 담임 관찰내용",
-    observed ? `- ${observed}` : "- 수업 참여, 과제 수행, 질문 태도 중 상담 때 연결할 관찰내용을 입력하면 이 부분에 함께 반영됩니다.",
-  ].join("\n");
+  const guide = buildLocalCounselingGuide({ student, teacherObservation: observation });
+  return guide ? counselingGuideToMemo(guide, student.name) : "학생을 먼저 선택해 주세요.";
 }
 
 export function buildCounselingPrompt(input: CounselingRequest): string {
-  const localDraft = buildCounselingMemo(input.student ?? null, input.teacherObservation ?? "");
+  const localGuide = buildLocalCounselingGuide(input);
 
   return [
     "한국 고등학교 담임교사가 학생과 성적 상담을 하기 전에 보는 내부 참고자료를 작성한다.",
     "학부모에게 보내는 문안이 아니라 교사용 상담 자료다. 따라서 성적, 석차, 백분위, 5등급제 정보는 필요한 경우 근거로 사용해도 된다.",
     "단, 학생을 단정하거나 낙인찍는 표현은 피하고, 부족한 부분은 '확인할 지점'과 '보완할 방법'으로 쓴다.",
     "제공된 데이터 밖의 사실을 추정하지 않는다. 과목별 수치가 부족하면 부족하다고 말한다.",
-    "출력은 한국어로, 담임이 상담 직전에 빠르게 읽을 수 있게 짧은 제목과 목록 중심으로 쓴다.",
-    "반드시 포함할 섹션: 1. 핵심 요약, 2. 우선 상담할 보완 과목, 3. 강점으로 활용할 과목/습관, 4. 학생에게 물어볼 질문, 5. 다음 평가 전 2주 실천 계획.",
-    "우선 상담할 보완 과목에는 근거 수치와 보완 방법을 함께 쓴다.",
-    "900자에서 1400자 사이로 작성한다.",
-    "로컬 분석 초안:",
-    localDraft,
+    "상담 중 한눈에 볼 수 있도록 아래 JSON 형식만 출력한다. 마크다운 코드블록이나 설명 문장은 쓰지 않는다.",
+    "summary는 2~3개, focusSubjects는 1~3개, strengths는 1~2개, questions는 3~5개, actionPlan은 2~4개로 작성한다.",
+    "focusSubjects 각 항목에는 subject, evidence, issue, strategy, question을 모두 채운다.",
+    "closingNote는 상담 마무리 방향을 한 문장으로 쓴다.",
+    "JSON 스키마:",
+    JSON.stringify(
+      {
+        summary: ["핵심 요약 문장"],
+        focusSubjects: [
+          {
+            subject: "과목명",
+            evidence: "근거 수치",
+            issue: "확인할 지점",
+            strategy: "보완 방법",
+            question: "학생에게 물어볼 질문",
+          },
+        ],
+        strengths: ["강점으로 연결할 부분"],
+        questions: ["상담 중 질문"],
+        actionPlan: ["다음 평가 전 실천 계획"],
+        teacherObservation: "담임 관찰내용 또는 null",
+        closingNote: "마무리 방향",
+      },
+      null,
+      2,
+    ),
+    "로컬 분석 참고 JSON:",
+    JSON.stringify(localGuide, null, 2),
     "성적 상담 맥락 JSON:",
     JSON.stringify(counselingContext(input), null, 2),
   ].join("\n\n");

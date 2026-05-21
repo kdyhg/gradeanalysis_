@@ -481,6 +481,180 @@ textarea {
   min-height: 170px;
 }
 
+.counseling-board {
+  display: grid;
+  gap: 12px;
+}
+
+.counseling-board h3 {
+  margin: 0 0 8px;
+  font-size: 14px;
+  letter-spacing: 0;
+}
+
+.counseling-summary,
+.counseling-section,
+.counseling-note,
+.counseling-empty,
+.raw-memo {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfbf8;
+  padding: 12px;
+}
+
+.summary-chips {
+  display: grid;
+  gap: 7px;
+}
+
+.summary-chips span {
+  border-left: 3px solid var(--teal);
+  background: white;
+  padding: 8px 10px;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.focus-stack {
+  display: grid;
+  gap: 10px;
+}
+
+.focus-card {
+  border: 1px solid #e3dfd3;
+  border-radius: 8px;
+  background: white;
+  padding: 11px;
+}
+
+.focus-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.focus-card-head strong {
+  font-size: 15px;
+}
+
+.focus-card-head span {
+  min-height: 24px;
+  border-radius: 999px;
+  background: var(--amber-soft);
+  color: #79510d;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 8px;
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.focus-card .evidence {
+  margin: 0 0 9px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.focus-card dl {
+  display: grid;
+  gap: 7px;
+  margin: 0;
+}
+
+.focus-card dl > div {
+  display: grid;
+  grid-template-columns: 42px 1fr;
+  gap: 8px;
+}
+
+.focus-card dt {
+  color: var(--teal);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.focus-card dd {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.checklist {
+  display: grid;
+  gap: 8px;
+}
+
+.checklist label {
+  display: grid;
+  grid-template-columns: 18px 1fr;
+  gap: 8px;
+  align-items: start;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.action-plan,
+.compact-list {
+  display: grid;
+  gap: 7px;
+  margin: 0;
+  padding-left: 20px;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.counseling-note {
+  display: grid;
+  gap: 7px;
+  background: var(--teal-soft);
+  border-color: #badbd4;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.counseling-note p {
+  margin: 0;
+}
+
+.raw-memo summary {
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.raw-memo textarea {
+  margin-top: 10px;
+}
+
+.counseling-empty {
+  min-height: 220px;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 8px;
+  text-align: center;
+  color: var(--muted);
+}
+
+.counseling-empty svg {
+  color: var(--teal);
+}
+
+.counseling-empty strong {
+  color: var(--text);
+}
+
+.counseling-empty span {
+  max-width: 300px;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
 .notice {
   display: inline-flex;
   align-items: center;
