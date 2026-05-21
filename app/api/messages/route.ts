@@ -5,7 +5,7 @@ import { buildLocalDraft, buildPrompt, type GenerateRequest } from "@/lib/local-
 export const runtime = "nodejs";
 
 const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-5.4-mini";
-const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash-lite";
+const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-3.5-flash";
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.GOOGLE_API_KEY;
 
 const SYSTEM_INSTRUCTIONS =
@@ -88,7 +88,6 @@ async function generateWithGemini(prompt: string): Promise<string> {
         },
       ],
       generationConfig: {
-        temperature: 0.45,
         maxOutputTokens: 900,
       },
     }),

@@ -36,7 +36,7 @@ npm run dev
 
 ```bash
 GEMINI_API_KEY=your-gemini-api-key
-GEMINI_MODEL=gemini-2.5-flash-lite
+GEMINI_MODEL=gemini-3.5-flash
 ```
 
 OpenAI를 보조 공급자로 쓰려면 다음 값도 사용할 수 있습니다.
@@ -54,4 +54,4 @@ OPENAI_MODEL=gpt-5.4-mini
 
 ## 배포
 
-Vercel에 배포한 뒤 프로젝트 환경 변수에 `GEMINI_API_KEY`와 `GEMINI_MODEL`을 등록하세요.
+Vercel에 배포한 뒤 프로젝트 환경 변수에 `GEMINI_API_KEY`와 `GEMINI_MODEL`을 등록하세요. 품질을 더 우선하면 `GEMINI_MODEL=gemini-3.1-pro-preview`, 속도와 비용을 더 우선하면 `GEMINI_MODEL=gemini-2.5-flash`를 사용할 수 있습니다.
