@@ -21,12 +21,20 @@ const SYSTEM_INSTRUCTIONS =
 
 type GeminiResponse = {
   candidates?: Array<{
+    finishReason?: string;
     content?: {
       parts?: Array<{ text?: string }>;
     };
   }>;
   error?: { message?: string };
 };
+
+function geminiGenerationConfig(maxOutputTokens: number) {
+  return {
+    maxOutputTokens,
+    ...(GEMINI_MODEL.startsWith("gemini-3") ? { thinkingConfig: { thinkingLevel: "LOW" } } : {}),
+  };
+}
 
 function isCounselingRequest(value: unknown): value is CounselingRequest {
   if (!value || typeof value !== "object") return false;
@@ -133,14 +141,16 @@ async function generateWithGemini(prompt: string): Promise<string> {
           parts: [{ text: prompt }],
         },
       ],
-      generationConfig: {
-        maxOutputTokens: 1500,
-      },
+      generationConfig: geminiGenerationConfig(4096),
     }),
   });
 
   const data = (await response.json()) as GeminiResponse;
   if (!response.ok) throw new Error(data.error?.message ?? "Gemini 요청 중 오류가 발생했습니다.");
+
+  if (data.candidates?.[0]?.finishReason === "MAX_TOKENS") {
+    throw new Error("Gemini 응답이 토큰 제한에 걸려 중간에 끊겼습니다.");
+  }
 
   return extractGeminiText(data);
 }

@@ -15,12 +15,20 @@ const FORBIDDEN_GRADE_LANGUAGE = /등급|등급대|석차|백분위|상위\s*\d*
 
 type GeminiResponse = {
   candidates?: Array<{
+    finishReason?: string;
     content?: {
       parts?: Array<{ text?: string }>;
     };
   }>;
   error?: { message?: string };
 };
+
+function geminiGenerationConfig(maxOutputTokens: number) {
+  return {
+    maxOutputTokens,
+    ...(GEMINI_MODEL.startsWith("gemini-3") ? { thinkingConfig: { thinkingLevel: "LOW" } } : {}),
+  };
+}
 
 function isGenerateRequest(value: unknown): value is GenerateRequest {
   if (!value || typeof value !== "object") return false;
@@ -58,6 +66,13 @@ function finalizeAiMessage(generated: string, fallback: string) {
   if (!message) {
     return { message: fallback, usedFallback: true };
   }
+  if (fallback.length > 120 && message.length < 120) {
+    return {
+      message: fallback,
+      usedFallback: true,
+      notice: "AI 응답이 너무 짧게 생성되어 담임용 로컬 초안으로 바꿨습니다. 다시 생성하면 새 응답을 시도합니다.",
+    };
+  }
   if (FORBIDDEN_GRADE_LANGUAGE.test(message)) {
     return {
       message: fallback,
@@ -87,14 +102,16 @@ async function generateWithGemini(prompt: string): Promise<string> {
           parts: [{ text: prompt }],
         },
       ],
-      generationConfig: {
-        maxOutputTokens: 900,
-      },
+      generationConfig: geminiGenerationConfig(4096),
     }),
   });
 
   const data = (await response.json()) as GeminiResponse;
   if (!response.ok) throw new Error(data.error?.message ?? "Gemini 요청 중 오류가 발생했습니다.");
+
+  if (data.candidates?.[0]?.finishReason === "MAX_TOKENS") {
+    throw new Error("Gemini 응답이 토큰 제한에 걸려 중간에 끊겼습니다.");
+  }
 
   return extractGeminiText(data);
 }
