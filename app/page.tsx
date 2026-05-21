@@ -1,6 +1,6 @@
 "use client";
 
-import { ChangeEvent, DragEvent, useMemo, useState } from "react";
+import { ChangeEvent, useCallback, useEffect, useMemo, useState } from "react";
 import {
   AlertCircle,
   BarChart3,
@@ -59,6 +59,10 @@ function subjectStatusLabel(status: SubjectScore["status"]): string {
   return "보통";
 }
 
+function hasDraggedFiles(dataTransfer: DataTransfer | null): boolean {
+  return Boolean(dataTransfer && Array.from(dataTransfer.types).includes("Files"));
+}
+
 function toCsv(reports: StudentReport[]): string {
   const header = ["반", "번호", "이름", "과목", "점수", "과목평균", "차이", "석차", "중간석차", "석차백분위", "5등급", "수강자수", "상태"];
   const rows = reports.flatMap((report) =>
@@ -113,7 +117,7 @@ export default function Home() {
   const selectedObservation = selectedStudent ? observations[selectedStudent.id] ?? "" : "";
   const activeSource = activeSection === "message" ? messageSource : counselingSource;
 
-  async function parseUploadedFile(file: File) {
+  const parseUploadedFile = useCallback(async (file: File) => {
     setIsParsing(true);
     setParseError("");
     setMessage("");
@@ -160,7 +164,45 @@ export default function Home() {
       setIsParsing(false);
       setIsDragging(false);
     }
-  }
+  }, []);
+
+  useEffect(() => {
+    function handleWindowDragOver(event: DragEvent) {
+      if (!hasDraggedFiles(event.dataTransfer)) return;
+      event.preventDefault();
+      if (event.dataTransfer) event.dataTransfer.dropEffect = "copy";
+      setIsDragging(true);
+    }
+
+    function handleWindowDragLeave(event: DragEvent) {
+      if (!hasDraggedFiles(event.dataTransfer)) return;
+      if (event.relatedTarget) return;
+      setIsDragging(false);
+    }
+
+    async function handleWindowDrop(event: DragEvent) {
+      if (!hasDraggedFiles(event.dataTransfer)) return;
+      event.preventDefault();
+      const file = event.dataTransfer?.files?.[0];
+      if (!file) {
+        setIsDragging(false);
+        return;
+      }
+      await parseUploadedFile(file);
+    }
+
+    window.addEventListener("dragenter", handleWindowDragOver);
+    window.addEventListener("dragover", handleWindowDragOver);
+    window.addEventListener("dragleave", handleWindowDragLeave);
+    window.addEventListener("drop", handleWindowDrop);
+
+    return () => {
+      window.removeEventListener("dragenter", handleWindowDragOver);
+      window.removeEventListener("dragover", handleWindowDragOver);
+      window.removeEventListener("dragleave", handleWindowDragLeave);
+      window.removeEventListener("drop", handleWindowDrop);
+    };
+  }, [parseUploadedFile]);
 
   async function handleFile(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
@@ -171,26 +213,6 @@ export default function Home() {
     } finally {
       event.target.value = "";
     }
-  }
-
-  function handleDragOver(event: DragEvent<HTMLElement>) {
-    event.preventDefault();
-    setIsDragging(true);
-  }
-
-  function handleDragLeave(event: DragEvent<HTMLElement>) {
-    event.preventDefault();
-    setIsDragging(false);
-  }
-
-  async function handleDrop(event: DragEvent<HTMLElement>) {
-    event.preventDefault();
-    const file = event.dataTransfer.files?.[0];
-    if (!file) {
-      setIsDragging(false);
-      return;
-    }
-    await parseUploadedFile(file);
   }
 
   function downloadCsv() {
@@ -296,7 +318,16 @@ export default function Home() {
   }
 
   return (
-    <main className="workspace">
+    <main
+      className={`workspace ${!summary ? "initial-drop-zone" : ""} ${isDragging ? "page-dragging" : ""}`}
+    >
+      {!summary && isDragging && (
+        <div className="page-drop-overlay" aria-hidden="true">
+          <FileSpreadsheet size={42} />
+          <strong>파일을 놓으면 성적표를 불러옵니다</strong>
+          <span>나이스에서 내려받은 XLS DATA 파일을 화면 어디에든 놓아 주세요.</span>
+        </div>
+      )}
       <header className="topbar">
         <div>
           <p className="eyebrow">담임 성적 분석</p>
@@ -317,9 +348,6 @@ export default function Home() {
 
       <section
         className={`upload-strip ${isDragging ? "dragging" : ""}`}
-        onDragOver={handleDragOver}
-        onDragLeave={handleDragLeave}
-        onDrop={handleDrop}
       >
         <div className="file-state">
           <FileSpreadsheet size={22} />
@@ -369,7 +397,7 @@ export default function Home() {
             </div>
           </section>
 
-          <section className={`main-grid ${activeSection === "counseling" ? "consultation-grid" : ""}`}>
+          <section className="main-grid">
             <aside className="panel student-list" aria-label="학생 목록">
               <div className="panel-title">
                 <UsersRound size={18} />
@@ -474,7 +502,9 @@ export default function Home() {
               ) : null}
             </section>
 
-            <section className={`panel message-panel ${activeSection === "counseling" ? "consultation-panel" : ""}`} aria-label="작업 선택">
+          </section>
+
+          <section className={`panel message-panel work-panel ${activeSection === "counseling" ? "consultation-panel" : ""}`} aria-label="작업 선택">
               <div className="panel-title split">
                 <div>
                   {activeSection === "message" ? <Sparkles size={18} /> : <ClipboardList size={18} />}
@@ -704,7 +734,6 @@ export default function Home() {
                   </div>
                 </>
               )}
-            </section>
           </section>
 
           <section className="panel class-panel" aria-label="과목별 학급 분석">
