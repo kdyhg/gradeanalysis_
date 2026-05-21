@@ -369,7 +369,7 @@ export default function Home() {
             </div>
           </section>
 
-          <section className="main-grid">
+          <section className={`main-grid ${activeSection === "counseling" ? "consultation-grid" : ""}`}>
             <aside className="panel student-list" aria-label="학생 목록">
               <div className="panel-title">
                 <UsersRound size={18} />
@@ -474,7 +474,7 @@ export default function Home() {
               ) : null}
             </section>
 
-            <section className="panel message-panel" aria-label="작업 선택">
+            <section className={`panel message-panel ${activeSection === "counseling" ? "consultation-panel" : ""}`} aria-label="작업 선택">
               <div className="panel-title split">
                 <div>
                   {activeSection === "message" ? <Sparkles size={18} /> : <ClipboardList size={18} />}
