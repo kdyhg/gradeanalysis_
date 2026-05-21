@@ -22,6 +22,12 @@ export type GenerateRequest = {
   classContext?: ClassContext;
 };
 
+export type CounselingRequest = {
+  student?: StudentReport;
+  teacherObservation?: string;
+  classContext?: ClassContext;
+};
+
 type MessageStudentContext = {
   name: string;
   observation: string | null;
@@ -175,6 +181,40 @@ function classMessageContext(input: GenerateRequest) {
   };
 }
 
+function counselingContext(input: CounselingRequest) {
+  const student = input.student;
+  if (!student) return null;
+
+  return {
+    student: {
+      name: student.name,
+      grade: student.grade,
+      classNumber: student.classNumber,
+      studentNumber: student.studentNumber,
+      examName: student.examName,
+      averageScore: student.averageScore,
+      averageDelta: student.averageDelta,
+      averageFiveGrade: student.averageFiveGrade,
+      strengthCount: student.strengthCount,
+      watchCount: student.watchCount,
+      overallStatus: student.overallStatus,
+    },
+    teacherObservation: input.teacherObservation?.trim() || null,
+    subjects: student.subjects.map((subject) => ({
+      subject: compactSubjectName(subject) ?? subject.subject,
+      category: subject.category,
+      score: subject.value,
+      subjectAverage: subject.subjectAverage,
+      deltaFromAverage: subject.deltaFromAverage,
+      rank: subject.rankLabel ?? subject.rank,
+      participants: subject.participants,
+      percentile: subject.percentile,
+      fiveGrade: subject.fiveGrade,
+      status: subject.status,
+    })),
+  };
+}
+
 export function buildLocalDraft(input: GenerateRequest): string {
   if (input.mode === "class") {
     const klass = classLabel(input.classContext);
@@ -273,6 +313,25 @@ export function buildCounselingMemo(student: StudentReport | null, observation: 
     "6. 담임 관찰내용",
     observed ? `- ${observed}` : "- 수업 참여, 과제 수행, 질문 태도 중 상담 때 연결할 관찰내용을 입력하면 이 부분에 함께 반영됩니다.",
   ].join("\n");
+}
+
+export function buildCounselingPrompt(input: CounselingRequest): string {
+  const localDraft = buildCounselingMemo(input.student ?? null, input.teacherObservation ?? "");
+
+  return [
+    "한국 고등학교 담임교사가 학생과 성적 상담을 하기 전에 보는 내부 참고자료를 작성한다.",
+    "학부모에게 보내는 문안이 아니라 교사용 상담 자료다. 따라서 성적, 석차, 백분위, 5등급제 정보는 필요한 경우 근거로 사용해도 된다.",
+    "단, 학생을 단정하거나 낙인찍는 표현은 피하고, 부족한 부분은 '확인할 지점'과 '보완할 방법'으로 쓴다.",
+    "제공된 데이터 밖의 사실을 추정하지 않는다. 과목별 수치가 부족하면 부족하다고 말한다.",
+    "출력은 한국어로, 담임이 상담 직전에 빠르게 읽을 수 있게 짧은 제목과 목록 중심으로 쓴다.",
+    "반드시 포함할 섹션: 1. 핵심 요약, 2. 우선 상담할 보완 과목, 3. 강점으로 활용할 과목/습관, 4. 학생에게 물어볼 질문, 5. 다음 평가 전 2주 실천 계획.",
+    "우선 상담할 보완 과목에는 근거 수치와 보완 방법을 함께 쓴다.",
+    "900자에서 1400자 사이로 작성한다.",
+    "로컬 분석 초안:",
+    localDraft,
+    "성적 상담 맥락 JSON:",
+    JSON.stringify(counselingContext(input), null, 2),
+  ].join("\n\n");
 }
 
 export function buildPrompt(input: GenerateRequest): string {

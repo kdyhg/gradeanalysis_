@@ -25,9 +25,10 @@ import {
   type StudentReport,
   type SubjectScore,
 } from "@/lib/grade-parser";
-import { buildCounselingMemo, type MessageMode, type Tone } from "@/lib/local-message";
+import type { MessageMode, Tone } from "@/lib/local-message";
 
 type MessageSource = "idle" | "openai" | "gemini" | "local";
+type WorkSection = "message" | "counseling";
 
 const statusLabels: Record<StudentReport["overallStatus"], string> = {
   growth: "강점",
@@ -89,6 +90,7 @@ export default function Home() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [parseError, setParseError] = useState("");
   const [isParsing, setIsParsing] = useState(false);
+  const [activeSection, setActiveSection] = useState<WorkSection>("message");
   const [mode, setMode] = useState<MessageMode>("individual");
   const [tone, setTone] = useState<Tone>("warm");
   const [includeScores, setIncludeScores] = useState(false);
@@ -100,12 +102,15 @@ export default function Home() {
   const [counselingMemo, setCounselingMemo] = useState("");
   const [notice, setNotice] = useState("");
   const [messageSource, setMessageSource] = useState<MessageSource>("idle");
+  const [counselingSource, setCounselingSource] = useState<MessageSource>("idle");
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isGeneratingCounseling, setIsGeneratingCounseling] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
 
   const summary = useMemo<ClassSummary | null>(() => (reports.length ? summarizeClass(reports) : null), [reports]);
   const selectedStudent = reports.find((report) => report.id === selectedId) ?? reports[0] ?? null;
   const selectedObservation = selectedStudent ? observations[selectedStudent.id] ?? "" : "";
+  const activeSource = activeSection === "message" ? messageSource : counselingSource;
 
   async function parseUploadedFile(file: File) {
     setIsParsing(true);
@@ -113,6 +118,7 @@ export default function Home() {
     setMessage("");
     setNotice("");
     setMessageSource("idle");
+    setCounselingSource("idle");
     setObservations({});
     setCounselingMemo("");
 
@@ -245,9 +251,39 @@ export default function Home() {
     setNotice("문안을 클립보드에 복사했습니다.");
   }
 
-  function generateCounselingMemo() {
-    setCounselingMemo(buildCounselingMemo(selectedStudent, selectedObservation));
-    setNotice("성적 상담 참고 자료를 만들었습니다.");
+  async function generateCounselingMemo() {
+    if (!selectedStudent) return;
+
+    setIsGeneratingCounseling(true);
+    setNotice("");
+    setCounselingSource("idle");
+
+    try {
+      const response = await fetch("/api/counseling", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          teacherObservation: selectedObservation,
+          student: selectedStudent,
+          classContext: {
+            year: reports[0]?.year,
+            semester: reports[0]?.semester,
+            grade: classGrade || reports[0]?.grade,
+            classNumber: classNumberInput || reports[0]?.classNumber,
+            examName: reports[0]?.examName,
+          },
+        }),
+      });
+      const data = (await response.json()) as { memo?: string; source?: MessageSource; notice?: string; error?: string };
+      if (!response.ok) throw new Error(data.error ?? "상담 자료 생성에 실패했습니다.");
+      setCounselingMemo(data.memo ?? "");
+      setCounselingSource(data.source ?? "local");
+      setNotice(data.notice ?? "");
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "상담 자료 생성에 실패했습니다.");
+    } finally {
+      setIsGeneratingCounseling(false);
+    }
   }
 
   async function copyCounselingMemo() {
@@ -345,6 +381,7 @@ export default function Home() {
                     onClick={() => {
                       setSelectedId(report.id);
                       setCounselingMemo("");
+                      setCounselingSource("idle");
                     }}
                   >
                     <span className="number">{report.studentNumber ?? "-"}</span>
@@ -433,120 +470,148 @@ export default function Home() {
               ) : null}
             </section>
 
-            <section className="panel message-panel" aria-label="메시지 생성">
+            <section className="panel message-panel" aria-label="작업 선택">
               <div className="panel-title split">
                 <div>
-                  <Sparkles size={18} />
-                  <h2>문안</h2>
+                  {activeSection === "message" ? <Sparkles size={18} /> : <ClipboardList size={18} />}
+                  <h2>{activeSection === "message" ? "메시지 문안 생성" : "성적 상담 참고"}</h2>
                 </div>
-                {messageSource !== "idle" && (
-                  <span className={`soft-pill ${messageSource}`}>
-                    {messageSource === "gemini" ? "Gemini" : messageSource === "openai" ? "OpenAI" : "로컬"}
+                {activeSource !== "idle" && (
+                  <span className={`soft-pill ${activeSource}`}>
+                    {activeSource === "gemini" ? "Gemini" : activeSource === "openai" ? "OpenAI" : "로컬"}
                   </span>
                 )}
               </div>
 
-              <div className="segmented" role="tablist" aria-label="문안 범위">
-                <button className={mode === "individual" ? "active" : ""} type="button" onClick={() => setMode("individual")}>
-                  개별
+              <div className="section-tabs" role="tablist" aria-label="작업 구분">
+                <button className={activeSection === "message" ? "active" : ""} type="button" onClick={() => setActiveSection("message")}>
+                  <Sparkles size={18} />
+                  <span>문안 생성</span>
                 </button>
-                <button className={mode === "class" ? "active" : ""} type="button" onClick={() => setMode("class")}>
-                  단체
+                <button className={activeSection === "counseling" ? "active" : ""} type="button" onClick={() => setActiveSection("counseling")}>
+                  <ClipboardList size={18} />
+                  <span>상담 자료</span>
                 </button>
               </div>
 
-              <label className="field">
-                <span>문체</span>
-                <select value={tone} onChange={(event) => setTone(event.target.value as Tone)}>
-                  {toneOptions.map((option) => (
-                    <option value={option.value} key={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <label className="field">
-                <span>담임명</span>
-                <input value={teacherName} onChange={(event) => setTeacherName(event.target.value)} placeholder="선택" />
-              </label>
-
-              <div className="field-row">
-                <label className="field">
-                  <span>학년</span>
-                  <input value={classGrade} onChange={(event) => setClassGrade(event.target.value)} placeholder="예: 2" />
-                </label>
-                <label className="field">
-                  <span>반</span>
-                  <input value={classNumberInput} onChange={(event) => setClassNumberInput(event.target.value)} placeholder="예: 10" />
-                </label>
-              </div>
-
-              {mode === "individual" && (
-                <label className="field">
-                  <span>담임 관찰내용</span>
-                  <textarea
-                    className="observation-textarea"
-                    value={selectedObservation}
-                    onChange={(event) => {
-                      if (!selectedStudent) return;
-                      setObservations((current) => ({ ...current, [selectedStudent.id]: event.target.value }));
-                    }}
-                    placeholder="예: 수업 중 질문에 성실히 답하고, 과제 수행을 끝까지 해내려는 모습이 보임"
-                  />
-                </label>
-              )}
-
-              <label className="check-row">
-                <input type="checkbox" checked={includeScores} onChange={(event) => setIncludeScores(event.target.checked)} />
-                <span>점수 포함</span>
-              </label>
-
-              <button className="generate-button" type="button" onClick={generateMessage} disabled={isGenerating || !summary}>
-                {isGenerating ? <Loader2 className="spin" size={18} /> : <Sparkles size={18} />}
-                <span>{isGenerating ? "생성 중" : "문안 생성"}</span>
-              </button>
-
-              <textarea value={message} onChange={(event) => setMessage(event.target.value)} placeholder="생성된 문안" />
-
-              <div className="message-actions">
-                <button className="icon-button" type="button" onClick={copyMessage} disabled={!message} title="복사">
-                  <Clipboard size={18} />
-                  <span>복사</span>
-                </button>
-                {notice && (
-                  <p className="notice">
-                    <CheckCircle2 size={16} />
-                    {notice}
-                  </p>
-                )}
-              </div>
-
-              {mode === "individual" && (
-                <div className="counseling-box">
-                  <div className="panel-title mini split">
-                    <div>
-                      <ClipboardList size={18} />
-                      <h3>성적 상담 참고</h3>
-                    </div>
-                    <button className="icon-button" type="button" onClick={generateCounselingMemo} disabled={!selectedStudent} title="성적 상담 자료 만들기">
-                      <ClipboardList size={18} />
-                      <span>자료 만들기</span>
+              {activeSection === "message" ? (
+                <>
+                  <div className="segmented" role="tablist" aria-label="문안 범위">
+                    <button className={mode === "individual" ? "active" : ""} type="button" onClick={() => setMode("individual")}>
+                      개별
+                    </button>
+                    <button className={mode === "class" ? "active" : ""} type="button" onClick={() => setMode("class")}>
+                      단체
                     </button>
                   </div>
+
+                  <label className="field">
+                    <span>문체</span>
+                    <select value={tone} onChange={(event) => setTone(event.target.value as Tone)}>
+                      {toneOptions.map((option) => (
+                        <option value={option.value} key={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <label className="field">
+                    <span>담임명</span>
+                    <input value={teacherName} onChange={(event) => setTeacherName(event.target.value)} placeholder="선택" />
+                  </label>
+
+                  <div className="field-row">
+                    <label className="field">
+                      <span>학년</span>
+                      <input value={classGrade} onChange={(event) => setClassGrade(event.target.value)} placeholder="예: 2" />
+                    </label>
+                    <label className="field">
+                      <span>반</span>
+                      <input value={classNumberInput} onChange={(event) => setClassNumberInput(event.target.value)} placeholder="예: 10" />
+                    </label>
+                  </div>
+
+                  {mode === "individual" && (
+                    <label className="field">
+                      <span>담임 관찰내용</span>
+                      <textarea
+                        className="observation-textarea"
+                        value={selectedObservation}
+                        onChange={(event) => {
+                          if (!selectedStudent) return;
+                          setObservations((current) => ({ ...current, [selectedStudent.id]: event.target.value }));
+                        }}
+                        placeholder="예: 수업 중 질문에 성실히 답하고, 과제 수행을 끝까지 해내려는 모습이 보임"
+                      />
+                    </label>
+                  )}
+
+                  <label className="check-row">
+                    <input type="checkbox" checked={includeScores} onChange={(event) => setIncludeScores(event.target.checked)} />
+                    <span>점수 포함</span>
+                  </label>
+
+                  <button className="generate-button" type="button" onClick={generateMessage} disabled={isGenerating || !summary}>
+                    {isGenerating ? <Loader2 className="spin" size={18} /> : <Sparkles size={18} />}
+                    <span>{isGenerating ? "생성 중" : "문안 생성"}</span>
+                  </button>
+
+                  <textarea value={message} onChange={(event) => setMessage(event.target.value)} placeholder="생성된 문안" />
+
+                  <div className="message-actions">
+                    <button className="icon-button" type="button" onClick={copyMessage} disabled={!message} title="복사">
+                      <Clipboard size={18} />
+                      <span>복사</span>
+                    </button>
+                    {notice && (
+                      <p className="notice">
+                        <CheckCircle2 size={16} />
+                        {notice}
+                      </p>
+                    )}
+                  </div>
+                </>
+              ) : (
+                <>
+                  <label className="field">
+                    <span>담임 관찰내용</span>
+                    <textarea
+                      className="observation-textarea"
+                      value={selectedObservation}
+                      onChange={(event) => {
+                        if (!selectedStudent) return;
+                        setObservations((current) => ({ ...current, [selectedStudent.id]: event.target.value }));
+                      }}
+                      placeholder="예: 수업 참여, 과제 수행, 질문 태도처럼 상담에서 함께 확인하고 싶은 관찰내용"
+                    />
+                  </label>
+
+                  <button className="generate-button" type="button" onClick={generateCounselingMemo} disabled={isGeneratingCounseling || !selectedStudent}>
+                    {isGeneratingCounseling ? <Loader2 className="spin" size={18} /> : <ClipboardList size={18} />}
+                    <span>{isGeneratingCounseling ? "생성 중" : "상담 자료 생성"}</span>
+                  </button>
+
                   <textarea
                     className="counseling-textarea"
                     value={counselingMemo}
                     onChange={(event) => setCounselingMemo(event.target.value)}
-                    placeholder="학생 성적자료를 바탕으로 한 보완 지점, 상담 질문, 다음 평가 전 실천 약속"
+                    placeholder="AI가 학생 성적자료를 바탕으로 보완 지점, 상담 질문, 다음 평가 전 실천 계획을 정리합니다."
                   />
+
                   <div className="message-actions">
                     <button className="icon-button" type="button" onClick={copyCounselingMemo} disabled={!counselingMemo} title="성적 상담 자료 복사">
                       <Clipboard size={18} />
                       <span>자료 복사</span>
                     </button>
+                    {notice && (
+                      <p className="notice">
+                        <CheckCircle2 size={16} />
+                        {notice}
+                      </p>
+                    )}
                   </div>
-                </div>
+                </>
               )}
             </section>
           </section>

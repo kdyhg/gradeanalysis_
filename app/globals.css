@@ -385,6 +385,31 @@ h2 {
   gap: 12px;
 }
 
+.section-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.section-tabs button {
+  min-height: 48px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfbf8;
+  color: var(--text);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-weight: 800;
+}
+
+.section-tabs button.active {
+  border-color: var(--teal);
+  background: var(--teal-soft);
+  color: #0b5c51;
+}
+
 .segmented {
   display: grid;
   grid-template-columns: 1fr 1fr;
